@@ -57,7 +57,7 @@ class Model_GNN(nn.Module):
         return x
 
     def forward(self, data):
-        data = data.cuda()
+        data = data.to(data.x.device)
 
         x, edge_index, batch, = data.x, data.edge_index, data.batch,
 
@@ -150,7 +150,7 @@ class Model_TEXT(nn.Module):
 
 
 class Model_CNN(nn.Module):
-    def __init__(self, in_channels=1, latent_dim=128, input_size=(64, 224, 224), clin=None):
+    def __init__(self, in_channels=1, latent_dim=128, input_size=(16, 32, 32), clin=None):
         super(Model_CNN, self).__init__()
         self.in_channels = in_channels
         self.input_size = input_size
@@ -187,7 +187,7 @@ class Model_CNN(nn.Module):
         )
 
     def _load_and_preprocess_t(self, ct_paths_list, mask_paths_list, a_min=-1000, a_max=1000, b_min=0.0, b_max=1.0,
-                               target_size=(64, 224, 224)):
+                               target_size=(16, 32, 32)):
         import torch
         import numpy as np
         import SimpleITK as sitk
@@ -384,7 +384,7 @@ class Model_CNN(nn.Module):
 
         x = torch.cat([ct, mask], dim=1)
 
-        ct_x = self.CT_conv_blocks(x.cuda())
+        ct_x = self.CT_conv_blocks(x)
 
         x = ct_x.view(ct_x.size(0), -1)
 

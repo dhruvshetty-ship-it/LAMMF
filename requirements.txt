@@ -1,0 +1,45 @@
+# LAMMF on NSCLC — Python dependencies
+# Tested on Python 3.10-3.13. If starting fresh, Python 3.11 or 3.12 is safest.
+#
+# RECOMMENDED SETUP (especially on Windows):
+#   1. Create a fresh environment:   conda create -n lammf python=3.12 -y  &&  conda activate lammf
+#   2. Install PyTorch FIRST, per the official selector at https://pytorch.org
+#      - If the machine has an NVIDIA GPU, pick the CUDA build (much faster training).
+#      - If not, pick the CPU build.
+#   3. Then:   pip install -r requirements.txt
+
+# ---- CRITICAL PIN ----
+# pydicom 3.x breaks pydicom-seg (the mask converter). MUST be <3.
+pydicom==2.4.4
+pydicom-seg==0.4.1
+
+# ---- numpy: keep on 1.x; numpy 2.x breaks several deps here ----
+numpy<2
+
+# ---- core data / ML ----
+pandas
+scikit-learn
+tqdm
+joblib
+
+# ---- imaging + radiomics ----
+SimpleITK
+mirp                 # IBSI radiomics (replaces PyRadiomics, which won't install on 3.13)
+
+# ---- deep learning ----
+# NOTE: install torch FIRST from pytorch.org (see setup above), THEN these.
+# torch_geometric must match the installed torch version.
+torch
+torch_geometric
+
+# ---- only needed because Model_.py still imports them for the (unused) text branch ----
+# If you delete the text-branch imports at the top of Model_.py, you can drop these two.
+monai
+transformers
+
+# ------------------------------------------------------------------
+# Reference versions that are known to work together (pin these if you
+# hit conflicts, but exact torch/pyg pins are platform/Python-specific):
+#   torch 2.x, torch_geometric 2.8.x, SimpleITK 2.5.x, mirp 2.5.x,
+#   pandas 2.3.x, scikit-learn 1.7.x, monai 1.6.x, transformers 5.x, joblib 1.5.x
+# ------------------------------------------------------------------

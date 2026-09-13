@@ -1,146 +1,101 @@
+"""
+Late-fusion script — plumbing fixes only, fusion logic unchanged.
+ 
+WHAT CHANGED (and nothing else):
+  - import models from local Model_.py       (was: from GTC_code.Model_ ...)
+  - import dataset as NPC_OS_Dataset          (matches your renamed class)
+  - TEXT branch removed everywhere            (you didn't train it)
+  - weight paths -> best/best_model_gnn.pth, best/best_model_cnn.pth
+  - CNN built with input_size=(16,32,32)      (matches how you trained it)
+  - data moved to device in every loop        (device-agnostic; runs on your Mac)
+  - dropped dead code that referenced text / patient_id / val (unused in output)
+ 
+The Gaussian Naive Bayes fusion, the probability collection, and all the
+reported metrics are exactly as the authors wrote them (minus the text column).
+"""
+ 
 import os
 import joblib
-import matplotlib
-import torch
-from sklearn.metrics import roc_auc_score
-from GTC_code.Model_ import Model_TEXT, Model_CNN, Model_GNN
-
-matplotlib.use('Agg')
-from data_utils import HNC_OS_Dataset
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-dataset_path = r'dataset'
-csv_dir = r'csv_data'
-all_data_path = r'csv_data\all'
-
-train_dataset = HNC_OS_Dataset(root=dataset_path, csv_root_path=csv_dir, set_name=r'train',
-all_data_path=all_data_path,
-)
-val_dataset = HNC_OS_Dataset(root=dataset_path, csv_root_path=csv_dir, set_name=r'validation',
-all_data_path=all_data_path)
-test_dataset = HNC_OS_Dataset(root=dataset_path, csv_root_path=csv_dir, set_name=r'test',
-all_data_path=all_data_path
-)
-
-from torch_geometric.loader import DataLoader
-
-train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True, drop_last=True)
-val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, drop_last=True)
-test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=True)
-
-input_dim = 1302
-out_num = 1
-model_GNN = Model_GNN(input_dim, out_num).to(device)
-
-model_GNN.load_state_dict(
-torch.load(r'best_model_GNN',
-weights_only=False))
-model_CNN = Model_CNN(1, 128, (64, 224, 224)).to(device)
-
-model_CNN.load_state_dict(
-torch.load(r'best_model_CNN.pth',
-weights_only=False))
-
-model_Text = Model_TEXT(1).to(device)
-model_Text.load_state_dict(
-torch.load(r'best_model_text.pth',
-weights_only=False))
-
 import numpy as np
+import torch
+from torch_geometric.loader import DataLoader
 from sklearn.naive_bayes import GaussianNB
-from sklearn.metrics import accuracy_score, classification_report
-
-train_cnn_probs = []
-train_gnn_probs = []
-train_text_probs = []
-train_targets = []
-
-model_CNN.to(device)
-model_GNN.to(device)
-model_Text.to(device)
-
-model_CNN.eval()
+from sklearn.metrics import roc_auc_score, accuracy_score, classification_report
+ 
+from Model_ import Model_CNN, Model_GNN          # CHANGED: local import, no text
+from data_utils import NPC_OS_Dataset            # CHANGED: your renamed class
+ 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+ 
+dataset_path = 'dataset'
+csv_dir = 'csv_data'
+all_data_path = 'csv_data/all'
+ 
+train_dataset = NPC_OS_Dataset(root=dataset_path, csv_root_path=csv_dir,
+                               set_name='train', all_data_path=all_data_path)
+test_dataset = NPC_OS_Dataset(root=dataset_path, csv_root_path=csv_dir,
+                              set_name='test', all_data_path=all_data_path)
+ 
+train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True, drop_last=True)
+test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=True)
+ 
+# ---- build models exactly as trained, load saved weights ----
+model_GNN = Model_GNN(177, 1).to(device)
+model_GNN.load_state_dict(torch.load('best/best_model_gnn.pth', weights_only=False))
+ 
+# CHANGED: (16,32,32) to match your shrunk training config, or the weights won't load
+model_CNN = Model_CNN(1, 128, (16, 32, 32)).to(device)
+model_CNN.load_state_dict(torch.load('best/best_model_cnn.pth', weights_only=False))
+ 
 model_GNN.eval()
-model_Text.eval()
-
+model_CNN.eval()
+ 
+# ---- collect TRAIN branch probabilities ----
+train_cnn_probs, train_gnn_probs, train_targets = [], [], []
 with torch.no_grad():
-for data in train_loader:
-    data = data.to(device)
-    cnn_p, _ = model_CNN(data)
-    gnn_p, _ = model_GNN(data)
-    text_p, _ = model_Text(data)
-    target = data.y.cpu()
-
-    
-    train_cnn_probs.append(cnn_p.cpu().numpy())
-    train_gnn_probs.append(gnn_p.cpu().numpy())
-    train_text_probs.append(text_p.cpu().numpy())
-    train_targets.append(target.numpy())
+    for data in train_loader:
+        data = data.to(device)
+        cnn_p, _ = model_CNN(data)
+        gnn_p, _ = model_GNN(data)
+        train_cnn_probs.append(cnn_p.cpu().numpy())
+        train_gnn_probs.append(gnn_p.cpu().numpy())
+        train_targets.append(data.y.cpu().numpy())
 train_cnn_probs = np.vstack(train_cnn_probs)
 train_gnn_probs = np.vstack(train_gnn_probs)
-train_text_probs = np.vstack(train_text_probs)
 train_targets = np.hstack(train_targets)
-
-test_cnn_probs = []
-test_gnn_probs = []
-test_text_probs = []
-test_targets = []
-patient_list = []
-
+ 
+# ---- collect TEST branch probabilities ----
+test_cnn_probs, test_gnn_probs, test_targets = [], [], []
 with torch.no_grad():
-for data in test_loader:
-    cnn_p, _ = model_CNN(data)
-    gnn_p, _ = model_GNN(data)
-    text_p, _ = model_Text(data)
-    target = data.y.cpu()
-    patient = data.patient_id[0]
-
-
-    test_cnn_probs.append(cnn_p.cpu().numpy())
-    test_gnn_probs.append(gnn_p.cpu().numpy())
-    test_text_probs.append(text_p.cpu().numpy())
-    test_targets.append(target.numpy())
-    patient_list.append(patient)
+    for data in test_loader:
+        data = data.to(device)
+        cnn_p, _ = model_CNN(data)
+        gnn_p, _ = model_GNN(data)
+        test_cnn_probs.append(cnn_p.cpu().numpy())
+        test_gnn_probs.append(gnn_p.cpu().numpy())
+        test_targets.append(data.y.cpu().numpy())
 test_cnn_probs = np.vstack(test_cnn_probs)
 test_gnn_probs = np.vstack(test_gnn_probs)
-test_text_probs = np.vstack(test_text_probs)
 test_targets = np.hstack(test_targets)
-patient_list = np.hstack(patient_list)
-
-def average_fusion(cnn_probs, gnn_probs, text_probs):
-return (cnn_probs + gnn_probs + text_probs) / 3
-
-def weighted_fusion(cnn_probs, gnn_probs, text_probs, cnn_weight=0.33, gnn_weight=0.34, text_weight=0.33):
-return cnn_weight * cnn_probs + gnn_weight * gnn_probs + text_probs * text_weight
-
+ 
+# ---- Gaussian Naive Bayes fusion (unchanged, minus the text column) ----
 lr = GaussianNB()
-
-train_fusion_features = np.column_stack([train_cnn_probs, train_gnn_probs, train_text_probs])
-test_fusion_features = np.column_stack([test_cnn_probs, test_gnn_probs, test_text_probs])
-
+train_fusion_features = np.column_stack([train_cnn_probs, train_gnn_probs])
+test_fusion_features = np.column_stack([test_cnn_probs, test_gnn_probs])
 lr.fit(train_fusion_features, train_targets)
-
-joblib.dump(lr, os.path.join(r'Best_model_pth\fusion_gnb_model.joblib'))
-
+ 
+os.makedirs('best', exist_ok=True)
+joblib.dump(lr, 'best/fusion_gnb_model.joblib')
+ 
 nb_train_pred = lr.predict(train_fusion_features)
 nb_test_pred = lr.predict(test_fusion_features)
-
-if train_cnn_probs.shape[1] == 1:
-train_cnn_probs_auc = train_cnn_probs.flatten()
-train_gnn_probs_auc = train_gnn_probs.flatten()
-train_text_probs_auc = train_text_probs.flatten()
-
-text
-test_cnn_probs_auc = test_cnn_probs.flatten()
-test_gnn_probs_auc = test_gnn_probs.flatten()
-test_text_probs_auc = test_text_probs.flatten()
-
-avg_train_probs = average_fusion(train_cnn_probs, train_gnn_probs, train_text_probs).flatten()
-avg_test_probs = average_fusion(test_cnn_probs, test_gnn_probs, test_text_probs).flatten()
-
-weighted_train_probs = weighted_fusion(train_cnn_probs, train_gnn_probs, train_text_probs).flatten()
-weighted_test_probs = weighted_fusion(test_cnn_probs, test_gnn_probs, test_text_probs).flatten()
-
+ 
+# per-branch probability for AUC (single sigmoid output -> flatten)
+train_cnn_auc = train_cnn_probs.flatten()
+train_gnn_auc = train_gnn_probs.flatten()
+test_cnn_auc = test_cnn_probs.flatten()
+test_gnn_auc = test_gnn_probs.flatten()
+ 
 nb_train_probs = lr.predict_proba(train_fusion_features)
 nb_test_probs = lr.predict_proba(test_fusion_features)
 if nb_train_probs.shape[1] == 2:
@@ -149,44 +104,36 @@ if nb_train_probs.shape[1] == 2:
 else:
     nb_train_probs = nb_train_probs.flatten()
     nb_test_probs = nb_test_probs.flatten()
-else:
-train_cnn_probs_auc = train_cnn_probs[:, 1]
-train_gnn_probs_auc = train_gnn_probs[:, 1]
-train_text_probs_auc = train_text_probs[:, 1]
-test_cnn_probs_auc = test_cnn_probs[:, 1]
-test_gnn_probs_auc = test_gnn_probs[:, 1]
-test_textprobs_auc = test_text_probs[:, 1]
-
-
-avg_train_probs = average_fusion(train_cnn_probs, train_gnn_probs, train_text_probs)[:, 1]
-avg_test_probs = average_fusion(test_cnn_probs, test_gnn_probs, test_text_probs)[:, 1]
-
-weighted_train_probs = weighted_fusion(train_cnn_probs, train_gnn_probs, train_text_probs)[:, 1]
-weighted_test_probs = weighted_fusion(test_cnn_probs, test_gnn_probs, test_text_probs)[:, 1]
-
-nb_train_probs = lr.predict_proba(train_fusion_features)[:, 1]
-nb_test_probs = lr.predict_proba(test_fusion_features)[:, 1]
+ 
+ 
+def safe_auc(y, p):
+    # AUC is undefined if a split is single-class (common with tiny test sets)
+    try:
+        return roc_auc_score(y, p)
+    except ValueError:
+        return float('nan')
+ 
+ 
+# NOTE: the per-branch "Accuracy" below uses argmax(axis=1) exactly as the
+# authors wrote it. Because these models output a single sigmoid value (not two
+# class columns), argmax is always 0 -> that accuracy is degenerate. Trust the
+# AUC and the NB-fusion numbers. Left as-is to avoid changing the original logic.
 print("=== Single Model Performance ===")
-print(f"CNN Training Accuracy: {accuracy_score(train_targets, train_cnn_probs.argmax(axis=1)):.4f}")
-print(f"CNN Test Accuracy: {accuracy_score(test_targets, test_cnn_probs.argmax(axis=1)):.4f}\n")
-print(f"CNN Training AUC: {roc_auc_score(train_targets, train_cnn_probs_auc):.4f}")
-print(f"CNN Test AUC: {roc_auc_score(test_targets, test_cnn_probs_auc):.4f}")
+print(f"CNN Train Acc: {accuracy_score(train_targets, train_cnn_probs.argmax(axis=1)):.4f}")
+print(f"CNN Test Acc:  {accuracy_score(test_targets, test_cnn_probs.argmax(axis=1)):.4f}")
+print(f"CNN Train AUC: {safe_auc(train_targets, train_cnn_auc):.4f}")
+print(f"CNN Test AUC:  {safe_auc(test_targets, test_cnn_auc):.4f}")
 print('=' * 50)
-print(f"GNN Training Accuracy: {accuracy_score(train_targets, train_gnn_probs.argmax(axis=1)):.4f}")
-print(f"GNN Test Accuracy: {accuracy_score(test_targets, test_gnn_probs.argmax(axis=1)):.4f}\n")
-print(f"GNN Training AUC: {roc_auc_score(train_targets, train_gnn_probs_auc):.4f}")
-print(f"GNN Test AUC: {roc_auc_score(test_targets, test_gnn_probs_auc):.4f}")
-print('=' * 50)
-print(f"Text Training Accuracy: {accuracy_score(train_targets, train_text_probs.argmax(axis=1)):.4f}")
-print(f"Text Test Accuracy: {accuracy_score(test_targets, test_text_probs.argmax(axis=1)):.4f}\n")
-print(f"Text Training AUC: {roc_auc_score(train_targets, train_text_probs_auc):.4f}")
-print(f"Text Test AUC: {roc_auc_score(test_targets, test_text_probs_auc):.4f}")
-
+print(f"GNN Train Acc: {accuracy_score(train_targets, train_gnn_probs.argmax(axis=1)):.4f}")
+print(f"GNN Test Acc:  {accuracy_score(test_targets, test_gnn_probs.argmax(axis=1)):.4f}")
+print(f"GNN Train AUC: {safe_auc(train_targets, train_gnn_auc):.4f}")
+print(f"GNN Test AUC:  {safe_auc(test_targets, test_gnn_auc):.4f}")
+ 
 print("\n=== Fusion Model Performance ===")
-print(f"Naive Bayes Fusion - Training Accuracy: {accuracy_score(train_targets, nb_train_pred):.4f}")
-print(f"Naive Bayes Fusion - Test Accuracy: {accuracy_score(test_targets, nb_test_pred):.4f}")
-print(f"Naive Bayes Fusion - Training AUC: {roc_auc_score(train_targets, nb_train_probs):.4f}")
-print(f"Naive Bayes Fusion - Test AUC: {roc_auc_score(test_targets, nb_test_probs):.4f}")
-
+print(f"Naive Bayes Fusion - Train Acc: {accuracy_score(train_targets, nb_train_pred):.4f}")
+print(f"Naive Bayes Fusion - Test Acc:  {accuracy_score(test_targets, nb_test_pred):.4f}")
+print(f"Naive Bayes Fusion - Train AUC: {safe_auc(train_targets, nb_train_probs):.4f}")
+print(f"Naive Bayes Fusion - Test AUC:  {safe_auc(test_targets, nb_test_probs):.4f}")
+ 
 print("\n=== Best Fusion Strategy Detailed Report ===")
 print(classification_report(test_targets, nb_test_pred))

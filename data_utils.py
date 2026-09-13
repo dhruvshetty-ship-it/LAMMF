@@ -7,7 +7,7 @@ from torch_geometric.data import InMemoryDataset, Data
 from tqdm import tqdm
 
 
-class HNC_OS_Dataset(InMemoryDataset):
+class NPC_OS_Dataset(InMemoryDataset):
     def __init__(self, root, csv_root_path, set_name, all_data_path, transform=None,
                  pre_transform=None):
         self.csv_dir = csv_root_path
@@ -25,10 +25,10 @@ class HNC_OS_Dataset(InMemoryDataset):
 
         self.case_text_mapping = {}
         self.csv_files_text = [
-            r'Text_data\137_clinical_descriptions.csv',
-            r'Text_data\298_clinical_descriptions.csv',
-            r'Text_data\495_clinical_descriptions.csv',
-            r'Text_data\606_clinical_descriptions.csv',
+            r'Text_data/137_clinical_descriptions.csv',
+            r'Text_data/298_clinical_descriptions.csv',
+            r'Text_data/495_clinical_descriptions.csv',
+            r'Text_data/606_clinical_descriptions.csv',
         ]
         self.data_frames = []
 
@@ -55,11 +55,13 @@ class HNC_OS_Dataset(InMemoryDataset):
         for idx, row in self.df_label_data.iterrows():
             self.patient_label_map[row['Patient_ID']] = (row['label'])
 
-        super(HNC_OS_Dataset, self).__init__(root, transform, pre_transform)
-        if not os.path.exists(self.processed_paths[0]):
-            1
-        else:
-            self.process()
+        super(NPC_OS_Dataset, self).__init__(root, transform, pre_transform)
+        self.data, self.slices = torch.load(self.processed_paths[0], weights_only=False)
+
+        
+
+        
+
 
     @property
     def raw_file_names(self):
@@ -119,15 +121,16 @@ class HNC_OS_Dataset(InMemoryDataset):
                 x=x,
                 edge_index=edge_index,
                 y=y,
-                patient_id=patient_id,
+                # patient_id=patient_id,
                 ct_path=ct_path,
                 mask_path=mask_path,
                 all_mask_path=all_mask_paths,
-                text=text,
-                patient_clin=patient_clin,
-                node_names=node_names
+                # text=text,
+                
+                # node_names=node_names
             )
             data_list.append(data)
         os.makedirs(os.path.dirname(self.processed_paths[0]), exist_ok=True)
 
-        self.data, self.slices = self.collate(data_list)
+        data, slices = self.collate(data_list)
+        torch.save((data, slices), self.processed_paths[0])
