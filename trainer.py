@@ -1,4 +1,5 @@
 import logging
+import random
 import os
 import time
 import torch
@@ -9,6 +10,9 @@ from data_utils import NPC_OS_Dataset
 from Model_ import Model_GNN
 from Model_ import Model_CNN
 import numpy as np
+
+np.random.seed(42)
+torch.manual_seed(42)
 
 os.makedirs('best', exist_ok=True)
 
@@ -122,6 +126,7 @@ def main():
 
     #best_model_path = r'best/best_model.pth'
 
+    # BAND-AID FIX. REPLACE WHEN YOU CAN
     best_loss = 1000000000
 
     for epoch in range(epochs):

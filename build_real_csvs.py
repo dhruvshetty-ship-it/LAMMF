@@ -25,6 +25,8 @@ import os
 import argparse
 import random
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 
 N_DUMMY_FEAT = 1302   # match the GNN's expected input_dim (paper used 1302)
 
@@ -63,14 +65,17 @@ def main():
         return
     print(f"trainable cohort (CT + mask + label): {len(cohort)}")
 
-    random.seed(a.seed)
-    random.shuffle(cohort)
-    n = len(cohort)
-    n_tr, n_va = int(0.7 * n), int(0.15 * n)
+    y = []
+    for pid in cohort:
+        y.append(label_map[pid])
+
+    X_train, X_test, Y_train, Y_test = train_test_split(cohort, y, test_size=0.3, random_state=42, stratify=y)
+    X_test, X_val, Y_test, Y_val = train_test_split(X_test, Y_test, test_size=0.5, random_state=42, stratify=Y_test)
+
     splits = {
-        'train': cohort[:n_tr],
-        'validation': cohort[n_tr:n_tr + n_va],
-        'test': cohort[n_tr + n_va:],
+        'train': X_train,
+        'validation': X_val,
+        'test': X_test,
     }
 
     for d in ['normalized_data_csv', 'train_data_csv', 'csv_data', 'Text_data']:
@@ -102,10 +107,34 @@ def main():
             f'train_data_csv/{split}_set.csv', index=False)
         pos = sum(r['label'] for r in label_rows)
         print(f"  {split:11s}: {len(pids):3d} patients ({pos} survived / {len(pids)-pos} died)")
-    
-    # normalized_train_df = pd.read_csv('normalized_data_train.csv')
-    # normalized_test_df = 
-    # normalized_val_df =  
+
+    # READ EACH CSV IN THE TRAIN/TEST/VAL SPLIT
+    normalized_train_df = pd.read_csv('normalized_data_csv/normalized_data_train.csv').copy()
+    normalized_test_df = pd.read_csv('normalized_data_csv/normalized_data_test.csv').copy()
+    normalized_val_df = pd.read_csv('normalized_data_csv/normalized_data_validation.csv').copy()
+
+    # DROP NON-NUMERICAL COLUMNS
+    cols_to_normalize_train = normalized_train_df.drop(['Patient_ID', 'Component_ID', 'Mask_Path', 'ROI_Name'], axis=1)
+    cols_to_normalize_test = normalized_test_df.drop(['Patient_ID', 'Component_ID', 'Mask_Path', 'ROI_Name'], axis=1)
+    cols_to_normalize_val = normalized_val_df.drop(['Patient_ID', 'Component_ID', 'Mask_Path', 'ROI_Name'], axis=1)
+
+    # SCALE THE COLUMNS
+    scalar = StandardScaler()
+    scaled_cols_train = scalar.fit_transform(cols_to_normalize_train)
+    scaled_cols_test = scalar.transform(cols_to_normalize_test)
+    scaled_cols_val = scalar.transform(cols_to_normalize_val)
+
+    # REPLACE THE COLUMNS AND OVERWRITE THE CSVS
+    cols_to_replace_train = cols_to_normalize_train.columns
+    cols_to_replace_test = cols_to_normalize_test.columns
+    cols_to_replace_val = cols_to_normalize_val.columns
+    normalized_train_df[cols_to_replace_train] = scaled_cols_train
+    normalized_test_df[cols_to_replace_test] = scaled_cols_test
+    normalized_val_df[cols_to_replace_val] = scaled_cols_val
+    normalized_train_df.to_csv(r'normalized_data_csv/normalized_data_train.csv', index=False)
+    normalized_test_df.to_csv(r'normalized_data_csv/normalized_data_test.csv', index=False)
+    normalized_val_df.to_csv(r'normalized_data_csv/normalized_data_validation.csv', index=False)
+
 
 
 
