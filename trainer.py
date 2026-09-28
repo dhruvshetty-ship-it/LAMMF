@@ -2,6 +2,9 @@ import logging
 import random
 import os
 import time
+
+import torch.nn.functional as F
+import pandas as pd
 import torch
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score
@@ -10,6 +13,13 @@ from data_utils import NPC_OS_Dataset
 from Model_ import Model_GNN
 from Model_ import Model_CNN
 import numpy as np
+
+
+labels = pd.read_csv(r'labels_all.csv')
+n_survived = labels['label'].sum()
+n_died = labels.shape[0] - n_survived
+W_DIED = (n_survived + n_died) / (2 * n_died)          # ~2.9, deaths weighted higher
+W_SURVIVED = (n_survived + n_died) / (2 * n_survived)  # ~0.6
 
 np.random.seed(42)
 torch.manual_seed(42)
@@ -47,7 +57,8 @@ def train(model, train_loader, optimizer, criterion):
 
         pred, _ = model(data)
         label = data.y.view(-1, 1)
-        loss = criterion(pred, label)
+        weights = torch.where(label == 0, torch.tensor(W_DIED, device=device), torch.tensor(W_SURVIVED, device=device))
+        loss = F.binary_cross_entropy(pred, label, weight=weights)
 
         loss.backward()
         optimizer.step()
