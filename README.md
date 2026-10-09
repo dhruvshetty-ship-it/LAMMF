@@ -1,126 +1,119 @@
------
+# LAMMF on NSCLC-Radiogenomics
 
-# Multi-modal Fusion Framework for Head and Neck Cancer Prognosis
+Survival prediction for **non-small cell lung cancer** using a multimodal model:
+a **3D CNN** on CT + tumor mask, a **GNN** on radiomics features, and
+**Gaussian Naive Bayes late fusion** of the two.
 
-This repository implements a deep learning-based multi-modal fusion framework designed to predict the prognosis (e.g., Overall Survival, OS) of Head and Neck Cancer (HNC) patients.
+This is an adaptation of the LAMMF framework
+([Radiotherapy-AI-Lab/LAMMF](https://github.com/Radiotherapy-AI-Lab/LAMMF)),
+originally built for head-and-neck cancer. The published code did not run as-is;
+this repo is a debugged version retargeted at the
+[NSCLC-Radiogenomics](https://www.cancerimagingarchive.net/collection/nsclc-radiogenomics/)
+collection from TCIA. We are training our own model on new data, not reproducing
+the paper's results.
 
-The framework integrates **CT Imaging (3D CNN)**, **Clinical Text (PubMedBERT)**, and **Graph Structural Features (GNN)** using a **Late Fusion** strategy (Gaussian Naive Bayes) to achieve robust and accurate predictions.
+> **Status:** the full pipeline runs end-to-end on real data. Results are **not yet
+> meaningful**: only ~39 patients currently have usable CT + segmentation, so the
+> test set is tiny. See `PROGRESS_SUMMARY.md` and `ISSUES_BACKLOG.md`.
 
------
+---
 
-## 🏗️ Architecture
+## What changed from the original LAMMF
 
-The framework consists of three independent branch networks processing different modalities, followed by a fusion layer:
+| | Original LAMMF | This repo |
+|---|---|---|
+| Cancer / data | Head & neck, 6 TCIA centers | Lung (NSCLC-Radiogenomics) |
+| Text branch (PubMedBERT) | Used | **Removed** (no clinical-note text in this dataset) |
+| Radiomics | 1302 features | **177 IBSI features via MIRP** (PyRadiomics won't install on Python 3.13 / Apple Silicon) |
+| Label | Overall survival | Binary: survived past a cutoff (default 2 years). `1 = survived`, `0 = died` |
+| Training | One model, hand-edited per run | `trainer.py gnn` / `trainer.py cnn` |
 
-1.  **3D CNN Branch (CT Imaging)**:
+Improvements made since getting it running: z-score feature normalization
+(fit on train only), stratified train/val/test split, fixed random seeds, and
+class-weighted BCE loss. Full history in `CHANGELOG.md`.
 
-      * **Input**: Preprocessed 3D CT scans (target size: 64x224x224) + Masks.
-      * **Backbone**: Custom 3D Convolutional Network with 4 `ConvBlock` layers and `AdaptiveAvgPool3d`.
-      * **Purpose**: Extracts deep spatial visual features from the tumor region.
+---
 
-2.  **GNN Branch (Graph Features)**:
+## Setup
 
-      * **Input**: Graph data constructed from ROIs (feature dimension: 1302).
-      * **Backbone**: Utilizes `ResGatedGraphConv` (Residual Gated Graph Convolutions) and `TopKPooling`.
-      * **Purpose**: Captures topological relationships and feature interactions between different ROIs.
+See **`SETUP.md`**. Short version: Python 3.12, a virtual environment, install
+PyTorch first, then `pip install -r requirements.txt`.
 
-3.  **Text Branch (Clinical Reports)**:
+---
 
-      * **Input**: Clinical text descriptions and tabular clinical features.
-      * **Backbone**: **PubMedBERT** (`BiomedNLP-PubMedBERT`) for semantic embedding + MLP for classification.
-      * **Purpose**: Leverages unstructured semantic information from clinical descriptions.
+## Running the pipeline
 
-4.  **Decision Fusion**:
+Run everything from the repo folder with your environment active
+(`source .venv/bin/activate`). Raw data, generated CSVs, caches and model weights
+are all gitignored, so each machine builds them locally.
 
-      * **Method**: **Gaussian Naive Bayes (GNB)** fusion strategy.
-      * **Mechanism**: Aggregates the probability outputs from the three individual models to generate the final prediction.
-
------
-
-## 📂 Dataset
-
-The dataset is derived from 7 centers, including a multi-center development cohort and an independent external validation cohort.
-
-| Cohort | Sample Size (n) | Description |
-| :--- | :--- | :--- |
-| **Model Development Cohort** | **1321** | Aggregated from 6 centers (TCIA Public Dataset: CHUS, CHUM, HMR, HN1, OPC1, OPC2). |
-| - *Training Set* | 925 | Used for model training. |
-| - *Validation Set* | 134 | Used for hyperparameter tuning and early stopping. |
-| - *Internal Test Set* | 262 | Used for internal performance evaluation. |
-| **External Validation Cohort** | **181** | Independent external data from ** External_set **. |
-
-*Note: Strict exclusion criteria were applied to ensure data quality (e.g., excluding patients with undefined RTstructs or missing clinical data).*
-
------
-
-## 🛠️ Requirements
-
-Please ensure the following Python libraries are installed:
-
-```bash
-torch>=1.8.0
-torch_geometric
-monai
-transformers  # For PubMedBERT
-scikit-learn
-pandas
-numpy
-SimpleITK     # For 3D image processing
-tqdm
+**1. Labels** — clinical CSV from TCIA → `labels_all.csv`
+```
+python make_labels.py <clinical.csv> --cutoff_days 730
 ```
 
------
-
-## 📂 File Structure
-
-  * **`Model_.py`**: Defines the core model architectures, including `Model_CNN`, `Model_GNN`, `Model_TEXT`, and the `PubMedBertTextEncoder`.
-  * **`data_utils.py`**: Contains the `NPC_OS_Dataset` class, handling CSV loading, SimpleITK-based CT preprocessing, and graph data construction.
-  * **`trainer.py`**: The main training script including the training loop, validation, early stopping mechanism, and logging.
-  * **`late_fusion_GNB.py`**: The fusion script. It loads pre-trained weights for CNN, GNN, and Text models, extracts probability vectors, trains the Gaussian Naive Bayes fusion model, and outputs evaluation metrics (AUC/Accuracy).
-
------
-
-## 🚀 Usage
-
-### 1\. Data Preparation
-
-Ensure your data directory structure matches the configuration in `data_utils.py`:
-
-  * `dataset/`: Directory for processed graph datasets.
-  * `csv_data/`: Directory for file paths and indices (e.g., `file_paths_CT.csv`).
-  * `Text_data/`: Directory for clinical text CSVs.
-  * `all_clin_data.csv`: Tabular clinical features.
-
-### 2\. Training Single-Modality Models
-
-Use `trainer.py` to train each sub-model individually. You need to instantiate the corresponding class (`Model_CNN`, `Model_GNN`, or `Model_TEXT`) within the `main()` function in `trainer.py`.
-
-```bash
-# Example: Run the training script
-python trainer.py
+**2. Images** — DICOM download → `ct/<id>.nii.gz` and `masks/<id>.nii.gz`
+```
+python convert_dicom.py "/path/to/NSCLC download root" --out . --require_seg
 ```
 
-### 3\. Multi-modal Fusion & Evaluation
+**3. Radiomics** — CT + mask → `radiomics_features.csv` (177 features)
+```
+python extract_features_mirp.py
+```
 
-Once all three models are trained and the best weights (`.pth` files) are saved, run the fusion script:
+**4. Assemble + split + normalize** → all CSVs the model reads
+```
+python build_real_csvs.py labels_all.csv
+```
+Then **delete the `dataset/` folder** if it exists, so the loader rebuilds its
+cache from the new CSVs.
 
-```bash
+**5. Train each branch**
+```
+python trainer.py gnn
+python trainer.py cnn
+```
+Best weights are saved to `best/best_model_gnn.pth` and `best/best_model_cnn.pth`.
+
+**6. Fuse**
+```
 python late_fusion_GNB.py
 ```
+Trust the **AUC** numbers, not accuracy, at this sample size.
 
-This script will:
+### Smoke test without downloading data
+`make_fake_data.py` creates 20 fake patients (`ct/`, `masks/`, `labels_all.csv`),
+replacing steps 1–2. Then run steps 3–6 to confirm a fresh environment works.
 
-1.  Load the pre-trained weights for CNN, GNN, and Text models.
-2.  Extract prediction probabilities for both Training and Test sets.
-3.  Fit a **Gaussian Naive Bayes** classifier on the training predictions.
-4.  Evaluate the fusion model on the test set and print the **Classification Report** (AUC, Accuracy, Precision, Recall).
+---
 
------
+## Files
 
-## 📊 Results
+| File | Purpose |
+|---|---|
+| `make_labels.py` | Clinical CSV → binary survival labels |
+| `make_cohort.py` | Diagnostic only: estimates how many patients have imaging |
+| `convert_dicom.py` | DICOM CT + DICOM-SEG → NIfTI |
+| `extract_features_mirp.py` | IBSI radiomics with MIRP |
+| `build_real_csvs.py` | Builds the cohort, stratified split, normalization, model CSVs |
+| `make_fake_data.py` | Fake dataset for smoke-testing |
+| `data_utils.py` | PyTorch Geometric dataset (`NPC_OS_Dataset`) |
+| `Model_.py` | Model definitions (`Model_CNN`, `Model_GNN`) |
+| `trainer.py` | Trains one branch (`gnn` or `cnn`) |
+| `late_fusion_GNB.py` | Fuses the two branches with Gaussian Naive Bayes |
 
-The `late_fusion_GNB.py` script outputs a detailed performance report:
+## Project docs
 
-  * **Individual Models**: Accuracy and AUC for CNN, GNN, and Text models independently.
-  * **Fusion Model**: Accuracy and AUC for the GNB-fused result.
+- `SETUP.md` — environment setup
+- `PROGRESS_SUMMARY.md` — current state of the project
+- `ISSUES_BACKLOG.md` — known issues, ranked, with what's done
+- `CHANGELOG.md` — everything changed from the original repo, and why
 
+## Known limitations
+
+Small cohort (~39 patients), so all metrics are high-variance. The GNN currently
+sees one node per patient, so it behaves like an MLP. The CNN uses a small crop
+(16×32×32) and preprocesses images inside `forward()`. Labels don't yet account
+for censoring. Full-resolution training needs a GPU. Details in
+`ISSUES_BACKLOG.md`.
