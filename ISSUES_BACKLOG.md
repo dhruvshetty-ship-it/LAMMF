@@ -48,6 +48,23 @@ improvements. ★ = highest value. Tackle data first (per plan).
       (degenerate). Fix: threshold at 0.5. (reporting only; trust AUC/fusion)
 - [ ] **T6 — Verify the test_auc print fix** is fully in (unpack `test_loss, test_auc`).
 
+## HNSCC DATASET (new, on the advisor's Windows PC)
+- [ ] ★ **L1 — Labels use a simplified, temporary rule.** `make_labels_hnscc.py`
+      keeps alive patients and cancer-related deaths, and REMOVES anyone who died of
+      a non-cancer / unknown / other cause ("cancer-related" = cause text mentions
+      cancer and isn't "non-cancer"). Revisit with advisor: overall vs disease-specific
+      survival, use of the spreadsheet's censor columns, how to treat unknown causes,
+      whether "other cancer" should count. Alive patients followed < cutoff are removed.
+- [ ] ★ **H1 — Mask structure not chosen yet.** Plan: primary GTV only. Names vary
+      (`gtv`, `gtv primary`, `gtv bot`, `gtv tonsil`...); plain `gtv` (34 patients) may
+      include nodes. Ideas: use N stage (N0 = primary only), separate node structure
+      present, count mask pieces. 8 patients have no GTV-named structure. Exclude
+      `ptv70_nogtv`. Pre- vs post-chemo GTV still to ask advisor.
+- [ ] **H2 — Only 65 patient folders found (~60 usable), not ~130.** Ask advisor whether
+      more data exists. Spreadsheet covers 215 patients.
+- [ ] **H3 — Docs say lung (NSCLC); HNSCC is head-and-neck.** Update README etc. once
+      HNSCC becomes the main dataset.
+
 ## DEFERRED / SCOPE (bigger, advisor/compute-gated)
 - [ ] **S1 — Censoring:** 148 "alive" labeled survived without follow-up check. Refine.
 - [ ] **S2 — Cutoff:** 2yr vs 5yr (changes labels + balance). Advisor decision.
