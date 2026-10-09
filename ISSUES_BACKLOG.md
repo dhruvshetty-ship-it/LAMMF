@@ -61,7 +61,6 @@ improvements. ★ = highest value. Tackle data first (per plan).
 2. ~~T3 (seeds)~~ — DONE (np + torch seeded in trainer).
 3. ~~T1 (weighted loss)~~ — DONE.
 4. M1 (preprocess out of forward) — makes CNN iteration fast + enables aug. **← NEXT**
-4. M1 (preprocess out of forward) — makes CNN iteration fast + enables aug.
 5. M2/M3/M6 (regularization, norm, augmentation) — attack overfitting.
 6. D5/M4 (GNN-is-an-MLP) — design decision.
 7. Scale-up (S3/S5) once the above are solid.

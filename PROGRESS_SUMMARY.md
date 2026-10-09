@@ -1,7 +1,7 @@
 # LAMMF on NSCLC-Radiogenomics — Progress Summary
 
 *Living snapshot. Source of truth for the project — keep this current.*
-*Last updated: after full real-data run + improvement audit.*
+*Last updated: after normalization, stratified split, seeds and weighted loss.*
 
 ## The task
 Get the LAMMF multimodal survival model (3D CNN + GNN + late fusion) working,
@@ -27,7 +27,8 @@ Raw TCIA download (DICOM CT + DICOM-SEG masks + clinical CSV) ->
    features via **MIRP**, resampled to 2mm). NOTE: PyRadiomics was abandoned
    (won't install on Python 3.13 / Apple Silicon); MIRP is the validated,
    pip-installable replacement.
-5. **build_real_csvs.py** — assembles + splits (70/15/15) into the exact CSVs
+5. **build_real_csvs.py** — assembles, stratified-splits (70/15/15) and
+   z-score-normalizes (fit on train) into the exact CSVs
    `data_utils.py` reads: normalized_data_*, *_set, file_paths_CT, plus clin/text
    placeholders. Intersects label ∩ CT ∩ mask ∩ features.
 6. **data_utils.py** (the model's loader, heavily modified) — reads the CSVs,
@@ -36,11 +37,11 @@ Raw TCIA download (DICOM CT + DICOM-SEG masks + clinical CSV) ->
 ## Current cohort
 - Downloaded + converted **40** R01 patients (with masks). Only R01 patients have
   segmentations; AMC patients have none. 1 empty mask (R01-022) dropped -> **39**.
-- Split: 27 train / 5 val / 7 test.
+- Split (stratified): 27 train / 6 val / 6 test.
 
-## Last real-data fusion result (MEANINGLESS numbers, machinery works)
-Per-branch AUCs swing wildly (CNN test 0.0-1.0 across runs) because the test set
-has 1 death in 7 patients. Per-branch "accuracy" is degenerate (argmax on a
+## Last real-data fusion result (before the fixes; MEANINGLESS numbers)
+Per-branch AUCs swung wildly (CNN test 0.0-1.0 across runs) because the test set
+had 1 death in 7 patients. Not yet re-run with the four fixes in. Per-branch "accuracy" is degenerate (argmax on a
 single-output = always predicts class 0). Trust nothing here except "it ran."
 
 ## IMPROVEMENT AUDIT (get-it-working done; now make-it-right)
@@ -67,17 +68,17 @@ single-output = always predicts class 0). Trust nothing here except "it ran."
    (64,224,224) for real training (needs GPU).
 3. No data augmentation (small N -> overfitting).
 4. CNN does disk I/O in forward() every epoch (slow; refactor to cache).
-5. Single random split, no cross-validation (high-variance estimates at N=39).
+5. Single (stratified) split, no cross-validation (high-variance estimates at N=39).
 
 ## Deferred (from DEFERRED_ISSUES.md)
 Censoring in labels (148 "alive" not follow-up-checked), cutoff choice (2yr/5yr),
 head/neck-vs-lung framing, GPU needed for full-res + full cohort.
 
 ## Next steps
-- Separate data vs model work. Data audit above is understood; now walking the
-  MODEL workflow (CNN forward, GNN forward, training loop, fusion) before the
-  model-issues pass.
-- Highest-value quick patches when ready: feature normalization + stratified split.
+- Re-run GNN + CNN + fusion with the four fixes in (delete `dataset/` first) and
+  check whether predictions stop collapsing to "survived."
+- Then M1: move CNN image preprocessing out of `forward()` into the Dataset.
+- Full ordered list in ISSUES_BACKLOG.md.
 
 ## Tooling (all in LAMMF_IN_PROGRESS, tested)
 make_labels.py, make_cohort.py, convert_dicom.py, extract_features_mirp.py,

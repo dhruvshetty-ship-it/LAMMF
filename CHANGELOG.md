@@ -1,8 +1,8 @@
 # LAMMF-on-NSCLC — Change Log & Decision Record
 
 *Everything we changed from the moment we first tried to boot the original
-LAMMF repo to where we are now (feature normalization done; stratified split
-next). Written as a checkpoint before the "make-it-right" work continues.*
+LAMMF repo to where we are now (normalization, stratified split, seeds and
+weighted loss done; M1 next). Sections are in the order the work happened.*
 
 ---
 
@@ -68,8 +68,8 @@ synthetic data." Grouped by file.
   branch (`trainer.py gnn`, `trainer.py cnn`) so you don't hand-edit which model
   builds each time.
 - **`WeightedBCE` loss was undefined.** The trainer referenced a loss that didn't
-  exist. We restored a working BCE criterion (note: currently *unweighted* — see
-  backlog T1, this is a known regression against the authors' intent).
+  exist. We restored a plain, unweighted BCE criterion to get it running. (The
+  class weighting was added back later — see section 9.)
 - **Clarified the metric.** Output is a sigmoid probability; loss is BCE; **AUC**
   is the threshold-free ranking metric we actually trust. Per-branch "accuracy"
   uses `argmax` on a single-output logit, which is degenerate (always predicts
@@ -184,7 +184,8 @@ order:
 - Downloaded + converted **40** R01 patients that have segmentations (only R01
   patients have SEG masks; AMC patients have none). **R01-022 has an empty mask**
   and was dropped → **39 usable patients**.
-- Split: **27 train / 5 val / 7 test**.
+- Split at the time: **27 train / 5 val / 7 test** (random). After the stratified
+  split in section 7 it's **27 / 6 / 6**.
 - Fusion runs clean end-to-end. Reported numbers are meaningless at this N — trust
   only "it ran."
 
@@ -208,8 +209,14 @@ cluster:
   `Get-CimInstance Win32_VideoController` showed **Intel graphics only** → that
   machine is **CPU-only**. Real full-resolution training will need the **GPU
   cluster** (deferred).
-- **PyCharm** interpreter finally pointed at the working conda env after a detour
-  where it created an empty env; packages reinstalled, imports resolve.
+- **Mac environment reset.** Conda, pyenv and a PyCharm-made env were all
+  competing for `python`, which caused "No module named torch." Replaced with a
+  single `.venv` built from pyenv's Python 3.12.14, run from the terminal only
+  (`source .venv/bin/activate` each session).
+- **Git:** the GitHub repo had been created with its own starter files, so the
+  first push hit "unrelated histories." Merged with
+  `--allow-unrelated-histories`, keeping the local versions. Normal workflow is
+  now `git add .` → `git commit -m "..."` → `git push`.
 
 ---
 
@@ -297,7 +304,7 @@ performance, not the training-time reweighting.
 
 ## 10. Where we are & what's next
 
-**Status:** pipeline runs end-to-end on real data. Three make-it-right fixes are
+**Status:** pipeline runs end-to-end on real data. Four make-it-right fixes are
 in: features **normalized** (D1), split **stratified** (D2), seeds set (T3), and
 loss **weighted** (T1). The model should no longer collapse to "survived."
 
