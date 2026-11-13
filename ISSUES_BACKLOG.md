@@ -56,6 +56,8 @@ improvements. ★ = highest value. Tackle data first (per plan).
       cancer and isn't "non-cancer"). Revisit with advisor: overall vs disease-specific
       survival, use of the spreadsheet's censor columns, how to treat unknown causes,
       whether "other cancer" should count. Alive patients followed < cutoff are removed.
+      Cutoff is **5 years** by default. At 2 years only 4 of 56 labeled patients were
+      deaths (7%), too few to split or evaluate.
 - [ ] ★ **H1 — Mask structure not chosen yet.** Plan: primary GTV only. Names vary
       (`gtv`, `gtv primary`, `gtv bot`, `gtv tonsil`...); plain `gtv` (34 patients) may
       include nodes. Ideas: use N stage (N0 = primary only), separate node structure

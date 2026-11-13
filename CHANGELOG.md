@@ -313,8 +313,9 @@ unchanged.
   spreadsheet. Tumor contours are in **RTSTRUCT** files (polygons), not masks, and
   the GTV naming is inconsistent.
 - **`make_labels_hnscc.py`** — simplified temporary rule (backlog L1): alive and
-  cancer-related deaths kept, other deaths removed, 2-year cutoff, alive-but-short
-  follow-up removed.
+  cancer-related deaths kept, other deaths removed, alive-but-short follow-up
+  removed. Cutoff raised from 2 to **5 years** by default, because 2 years left
+  only 4 deaths among 56 labeled patients.
 - **`convert_ct_hnscc.py`** — picks the CT the RTSTRUCT references (handles
   patients with two CTs), saves `ct/`, and flags **uneven slice spacing**
   (backlog H4).

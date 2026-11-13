@@ -5,7 +5,7 @@ SIMPLIFIED LABEL RULE (temporary - see ISSUES_BACKLOG.md, item L1):
   - Alive patients are kept.
   - Patients who died of a CANCER-RELATED cause are kept, as deaths.
   - Patients who died of anything else (non-cancer, unknown, other) are REMOVED.
-  Then, at the cutoff (default 2 years = 730 days):
+  Then, at the cutoff (default 5 years = 1825 days):
     0 = died (cancer-related) on or before the cutoff
     1 = followed past the cutoff
     removed = alive but followed for less than the cutoff (outcome unknown)
@@ -14,7 +14,8 @@ SIMPLIFIED LABEL RULE (temporary - see ISSUES_BACKLOG.md, item L1):
 The script prints how every cause category was classified - check it.
 
 Run on the Windows PC from the LAMMF folder (REAL paths, not .lnk shortcuts):
-    python make_labels_hnscc.py "C:\\...\\clinical.xlsx" --patients_root "C:\\...\\patients"
+    python make_labels_hnscc.py "C:\\...\\clinical.xlsx" --patients_root "V:\\QIXR\\TCIA_H&N\\HNSCC"
+    (add --cutoff_days 730 for a 2-year cutoff)
 
 Writes:
   labels_all.csv     Patient_ID,label  (what the rest of the pipeline reads)
@@ -51,7 +52,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('clinical', help='clinical Excel (.xlsx) or CSV')
     ap.add_argument('--patients_root', help='REAL path to patient folders; keeps only patients with images')
-    ap.add_argument('--cutoff_days', type=int, default=730)        # 730 = 2 yr, 1825 = 5 yr
+    ap.add_argument('--cutoff_days', type=int, default=1825)       # 1825 = 5 yr, 730 = 2 yr
     ap.add_argument('--sheet', default=0, help='sheet name or index (default: first sheet)')
     ap.add_argument('--out', default='labels_all.csv')
     a = ap.parse_args()
@@ -111,7 +112,7 @@ def main():
         kind = 'CANCER-RELATED -> kept' if is_cancer_cause(cz) else 'other -> removed'
         print(f"  {n:4d}  {cz:40s} {kind}")
 
-    print(f"\ncutoff: {cut} days")
+    print(f"\ncutoff: {cut} days ({cut / 365:.1f} years)")
     print(df['reason'].value_counts().to_string())
     kept = df[df['label'].notna()]
     n1 = int((kept['label'] == 1).sum())

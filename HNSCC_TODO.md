@@ -14,8 +14,9 @@ Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
 - **CT conversion tested** on 3 patients: 2 converted, 1 skipped (PET only,
   expected). One scan showed **uneven slice spacing** (a gap ~7 mm off). The
   converter now has a spacing check (regenerated Nov 13; push it).
-- **Labels script written** (`make_labels_hnscc.py`, on GitHub) with a temporary
-  simplified rule (backlog L1). Not yet run on real data.
+- **Labels script run** (`make_labels_hnscc.py`) with a temporary simplified rule
+  (backlog L1). At a 2-year cutoff: 56 labeled, only **4 deaths**. Default changed
+  to a **5-year** cutoff; re-run pending.
 - **Masks not started.** Waiting on the GTV choice (backlog H1).
 
 ---
@@ -54,7 +55,7 @@ Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
 - [ ] Primary GTV only (agreed). For patients with both, pre-chemo or post-chemo GTV?
 - [ ] 8 patients have no GTV-named structure. Exclude them?
 - [ ] OK to use the simplified label rule for now (cancer deaths only, other deaths
-      removed, 2-year cutoff)?
+      removed, 5-year cutoff)? Should "Other Cancer" deaths (2 patients) count?
 - [ ] Mention any uneven-slice scans found.
 
 ---
