@@ -11,12 +11,11 @@ Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
   references a CT in the same study. 2 patients have two CT series. The clinical
   sheet (`Table 1_update`) covers 215 patients, and all 65 imaged patients match
   it by `TCIA code`.
-- **CT conversion tested** on 3 patients: 2 converted, 1 skipped (PET only,
-  expected). One scan showed **uneven slice spacing** (a gap ~7 mm off). The
-  converter now has a spacing check (regenerated Nov 13; push it).
-- **Labels script run** (`make_labels_hnscc.py`) with a temporary simplified rule
-  (backlog L1). At a 2-year cutoff: 56 labeled, only **4 deaths**. Default changed
-  to a **5-year** cutoff; re-run pending.
+- **CT conversion done** (`convert_ct_hnscc.py`): 61 CTs, 4 skipped (PET only).
+  3 had **uneven slice spacing**; all 3 were survivors, so they're dropped into
+  `ct_uneven/`. **58 usable CTs** in `ct/`.
+- **Labels done** (`make_labels_hnscc.py`, 5-year cutoff, simplified rule L1):
+  **55 labeled: 45 survived / 10 died.** (2-year cutoff had given only 4 deaths.)
 - **Masks not started.** Waiting on the GTV choice (backlog H1).
 
 ---
@@ -45,10 +44,9 @@ Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
   - [ ] Expect ~61 converted, 4 skipped, no errors.
   - [ ] Record the **slice spacing** summary: how many scans are UNEVEN, and how bad.
 
-### 3. Decide on uneven scans (backlog H4)
-- [ ] Few uneven scans → drop them for now.
-- [ ] Many → resample each one onto an evenly spaced grid using the true slice
-      positions (needs a small addition to `convert_ct_hnscc.py`).
+### 3. Uneven scans (backlog H4) — DECIDED
+- [x] 3 uneven, all survivors → dropped. Re-run `convert_ct_hnscc.py` once after
+      pulling, so it moves them from `ct\` to `ct_uneven\`. Then `ct\` should hold 58.
 
 ### 4. Message your advisor
 - [ ] Is 65 folders the full dataset, or are ~65 more patients somewhere else?

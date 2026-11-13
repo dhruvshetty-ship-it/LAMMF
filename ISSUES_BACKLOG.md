@@ -67,10 +67,12 @@ improvements. ★ = highest value. Tackle data first (per plan).
       more data exists. Spreadsheet covers 215 patients.
 - [ ] **H3 — Docs say lung (NSCLC); HNSCC is head-and-neck.** Update README etc. once
       HNSCC becomes the main dataset.
-- [ ] **H4 — Some CTs have uneven slice spacing** (one test scan had a gap ~7 mm off:
-      missing slice or mixed slice thickness). SimpleITK averages the gaps, so slices
-      past the odd gap end up misplaced. `convert_ct_hnscc.py` now flags these. Decide:
-      drop them, or resample onto an even grid using the true slice positions.
+- [x] **H4 — Some CTs have uneven slice spacing.** DONE (for now): full run found 3 of
+      61 uneven (typical 2.5 mm; worst gaps 9.8 mm, 1100 mm, and a slightly-too-small
+      gap). SimpleITK averages the gaps, so those volumes are distorted. All 3 were
+      survivors (label 1), so they're dropped: `convert_ct_hnscc.py` saves uneven scans
+      to `ct_uneven/` so the pipeline never sees them. 58 usable CTs. Possible later
+      fix: resample onto an even grid using the true slice positions.
 
 ## DEFERRED / SCOPE (bigger, advisor/compute-gated)
 - [ ] **S1 — Censoring:** 148 "alive" labeled survived without follow-up check. Refine.

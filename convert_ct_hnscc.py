@@ -10,6 +10,8 @@ For each patient folder:
        - several, no reference  -> use the largest, and flag it
   4. check slice spacing (flags missing slices / mixed slice thickness)
   5. read it with SimpleITK and save ct/<Patient_ID>.nii.gz
+     - UNEVEN scans are saved to ct_uneven/ instead, so the rest of the pipeline
+       skips them (an uneven scan left in ct/ by an older run gets moved there)
 
 Run on the Windows PC from the LAMMF folder (REAL path, not the .lnk shortcut):
     python convert_ct_hnscc.py "V:\\QIXR\\TCIA_H&N\\HNSCC" --limit 3     # test on 3 first
@@ -118,6 +120,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('root', help='REAL path to the folder of patient folders')
     ap.add_argument('--out', default='ct')
+    ap.add_argument('--uneven_out', default='ct_uneven',
+                    help='uneven-slice scans go here instead, so the pipeline skips them')
     ap.add_argument('--limit', type=int, default=0, help='only the first N patients (testing)')
     ap.add_argument('--overwrite', action='store_true')
     a = ap.parse_args()
@@ -154,12 +158,22 @@ def main():
                                gap_max_mm=round(gmax, 2), gap_typical_mm=round(gmed, 2),
                                n_uneven_gaps=n_off,
                                spacing_check='UNEVEN' if gmax - gmin > 0.5 else 'ok')
-                    if os.path.exists(out_path) and not a.overwrite:
-                        row['status'] = 'already done'
+                    uneven = row['spacing_check'] == 'UNEVEN'
+                    uneven_path = os.path.join(a.uneven_out, f'{pid}.nii.gz')
+                    dest = uneven_path if uneven else out_path
+                    if uneven and os.path.exists(out_path):
+                        # converted by an older run into ct/ - move it out of the pipeline
+                        os.makedirs(a.uneven_out, exist_ok=True)
+                        os.replace(out_path, uneven_path)
+                        row['status'] = f'moved to {a.uneven_out} (uneven)'
+                    elif os.path.exists(dest) and not a.overwrite:
+                        row['status'] = 'already done' + (f' ({a.uneven_out})' if uneven else '')
                     else:
+                        os.makedirs(os.path.dirname(dest), exist_ok=True)
                         img = read_ct(files)
-                        sitk.WriteImage(img, out_path)
-                        row.update(status='converted', size_xyz=str(img.GetSize()),
+                        sitk.WriteImage(img, dest)
+                        row.update(status='converted' + (f' to {a.uneven_out} (uneven)' if uneven else ''),
+                                   size_xyz=str(img.GetSize()),
                                    spacing_xyz_mm=str(tuple(round(s, 2) for s in img.GetSpacing())))
         except Exception as e:
             row['status'] = f'ERROR: {type(e).__name__}: {e}'
