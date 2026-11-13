@@ -12,6 +12,7 @@ improvements. ★ = highest value. Tackle data first (per plan).
       divisions stratified on labels. 70/15/15, class ratio preserved.
 - [ ] **D3 — CT selection = "biggest series" (crude).** Should use the CT the
       DICOM-SEG *references* to guarantee mask/CT alignment. Correctness risk at scale.
+      (Already done this way in the HNSCC converter.)
 - [ ] **D4 — Empty masks** (e.g. R01-022 dropped). Find WHY (label value? geometry?)
       before scaling to 144, or lose usable patients silently.
 - [ ] **D5 — Trivial GNN graph.** build_real_csvs gives 1 ROI/patient -> single-node
@@ -64,9 +65,14 @@ improvements. ★ = highest value. Tackle data first (per plan).
       more data exists. Spreadsheet covers 215 patients.
 - [ ] **H3 — Docs say lung (NSCLC); HNSCC is head-and-neck.** Update README etc. once
       HNSCC becomes the main dataset.
+- [ ] **H4 — Some CTs have uneven slice spacing** (one test scan had a gap ~7 mm off:
+      missing slice or mixed slice thickness). SimpleITK averages the gaps, so slices
+      past the odd gap end up misplaced. `convert_ct_hnscc.py` now flags these. Decide:
+      drop them, or resample onto an even grid using the true slice positions.
 
 ## DEFERRED / SCOPE (bigger, advisor/compute-gated)
 - [ ] **S1 — Censoring:** 148 "alive" labeled survived without follow-up check. Refine.
+      (HNSCC labels already handle this via follow-up time.)
 - [ ] **S2 — Cutoff:** 2yr vs 5yr (changes labels + balance). Advisor decision.
 - [ ] **S3 — GPU** needed for full-res CNN + full cohort (laptop can't).
 - [ ] **S4 — Head/neck -> lung:** training OUR model, not reproducing the paper.
@@ -77,7 +83,8 @@ improvements. ★ = highest value. Tackle data first (per plan).
 1. ~~D1 + D2 (normalize + stratify)~~ — DONE.
 2. ~~T3 (seeds)~~ — DONE (np + torch seeded in trainer).
 3. ~~T1 (weighted loss)~~ — DONE.
-4. M1 (preprocess out of forward) — makes CNN iteration fast + enables aug. **← NEXT**
-5. M2/M3/M6 (regularization, norm, augmentation) — attack overfitting.
-6. D5/M4 (GNN-is-an-MLP) — design decision.
-7. Scale-up (S3/S5) once the above are solid.
+4. HNSCC data adapters (labels, CT, masks — H1/H4/L1) — current focus. **← NEXT**
+5. M1 (preprocess out of forward) — makes CNN iteration fast + enables aug.
+6. M2/M3/M6 (regularization, norm, augmentation) — attack overfitting.
+7. D5/M4 (GNN-is-an-MLP) — design decision.
+8. Scale-up (S3/S5) once the above are solid.

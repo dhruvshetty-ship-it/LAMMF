@@ -8,23 +8,30 @@ For each patient folder:
        - only one CT            -> use it
        - several CTs            -> use the one the RTSTRUCT says it was drawn on
        - several, no reference  -> use the largest, and flag it
-  4. read it with SimpleITK and save ct/<Patient_ID>.nii.gz
+  4. check slice spacing (flags missing slices / mixed slice thickness)
+  5. read it with SimpleITK and save ct/<Patient_ID>.nii.gz
 
 Run on the Windows PC from the LAMMF folder (REAL path, not the .lnk shortcut):
-    python convert_ct_hnscc.py "C:\\...\\patients" --limit 3     # test on 3 first
-    python convert_ct_hnscc.py "C:\\...\\patients"               # then everyone
+    python convert_ct_hnscc.py "V:\\QIXR\\TCIA_H&N\\HNSCC" --limit 3     # test on 3 first
+    python convert_ct_hnscc.py "V:\\QIXR\\TCIA_H&N\\HNSCC"               # then everyone
 
-Already-converted patients are skipped, so it's safe to re-run. Use --overwrite
-to redo them. Writes ct_conversion_report.csv (stays on this PC).
+Already-converted patients are skipped (but still spacing-checked), so it's safe
+to re-run. Use --overwrite to redo them. Writes ct_conversion_report.csv (stays
+on this PC).
 """
 
 import os
 import sys
 import argparse
 
+import numpy as np
 import pandas as pd
 import pydicom
 import SimpleITK as sitk
+
+# ITK prints its own "non uniform sampling" warning; our spacing check below
+# reports the same thing per patient, with numbers, so silence the duplicate.
+sitk.ProcessObject.SetGlobalWarningDisplay(False)
 
 
 def read_header(fp):
@@ -75,13 +82,36 @@ def pick_ct(cts, refs):
     return max(cts, key=lambda c: c[2]), 'LARGEST (no unique RTSTRUCT reference) - check'
 
 
-def read_ct(series_dir, uid):
-    reader = sitk.ImageSeriesReader()
-    files = reader.GetGDCMSeriesFileNames(series_dir, uid)   # sorted by slice position
+def series_files(series_dir, uid):
+    files = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(series_dir, uid)  # sorted by position
     if not files:
         raise RuntimeError('GDCM found no files for this series UID')
+    return files
+
+
+def slice_gaps(files):
+    """
+    Distances (mm) between consecutive slices, from each slice's own position header.
+    A normal scan has (nearly) identical gaps; a missing slice or mixed slice
+    thickness shows up as one or more gaps that differ from the rest.
+    """
+    pos = []
+    for f in files:
+        h = read_header(f)
+        ipp = np.array(h.ImagePositionPatient, dtype=float)
+        iop = np.array(h.ImageOrientationPatient, dtype=float)
+        normal = np.cross(iop[:3], iop[3:])          # direction the slices are stacked in
+        pos.append(float(ipp @ normal))
+    gaps = np.diff(np.sort(pos))
+    med = float(np.median(gaps))
+    n_off = int((np.abs(gaps - med) > 0.1).sum())    # gaps more than 0.1 mm from typical
+    return float(gaps.min()), float(gaps.max()), med, n_off
+
+
+def read_ct(files):
+    reader = sitk.ImageSeriesReader()
     reader.SetFileNames(files)
-    return reader.Execute(), len(files)
+    return reader.Execute()
 
 
 def main():
@@ -106,30 +136,41 @@ def main():
     for i, pid in enumerate(patients, 1):
         out_path = os.path.join(a.out, f'{pid}.nii.gz')
         row = {'Patient_ID': pid, 'status': '', 'ct_choice': '', 'slices': '',
-               'size_xyz': '', 'spacing_xyz_mm': ''}
+               'size_xyz': '', 'spacing_xyz_mm': '', 'gap_min_mm': '', 'gap_max_mm': '',
+               'gap_typical_mm': '', 'n_uneven_gaps': '', 'spacing_check': ''}
         try:
-            if os.path.exists(out_path) and not a.overwrite:
-                row['status'] = 'already done'
+            studies = find_rt_study(os.path.join(a.root, pid))
+            if not studies:
+                row['status'] = 'skipped: no RT Simulation study'
             else:
-                studies = find_rt_study(os.path.join(a.root, pid))
-                if not studies:
-                    row['status'] = 'skipped: no RT Simulation study'
+                cts, refs = scan_study(studies[0])
+                if not cts:
+                    row['status'] = 'skipped: no CT series'
                 else:
-                    cts, refs = scan_study(studies[0])
-                    if not cts:
-                        row['status'] = 'skipped: no CT series'
+                    (sdir, uid, _), why = pick_ct(cts, refs)
+                    files = series_files(sdir, uid)
+                    gmin, gmax, gmed, n_off = slice_gaps(files)
+                    row.update(ct_choice=why, slices=len(files), gap_min_mm=round(gmin, 2),
+                               gap_max_mm=round(gmax, 2), gap_typical_mm=round(gmed, 2),
+                               n_uneven_gaps=n_off,
+                               spacing_check='UNEVEN' if gmax - gmin > 0.5 else 'ok')
+                    if os.path.exists(out_path) and not a.overwrite:
+                        row['status'] = 'already done'
                     else:
-                        (sdir, uid, _), why = pick_ct(cts, refs)
-                        img, n = read_ct(sdir, uid)
+                        img = read_ct(files)
                         sitk.WriteImage(img, out_path)
-                        row.update(status='converted', ct_choice=why, slices=n,
-                                   size_xyz=str(img.GetSize()),
+                        row.update(status='converted', size_xyz=str(img.GetSize()),
                                    spacing_xyz_mm=str(tuple(round(s, 2) for s in img.GetSpacing())))
         except Exception as e:
             row['status'] = f'ERROR: {type(e).__name__}: {e}'
         report.append(row)
-        print(f"[{i}/{len(patients)}] {row['status']}"
-              + (f"  ({row['ct_choice']}, {row['slices']} slices)" if row['ct_choice'] else ''))
+        msg = f"[{i}/{len(patients)}] {row['status']}"
+        if row['ct_choice']:
+            msg += f"  ({row['ct_choice']}, {row['slices']} slices)"
+        if row['spacing_check'] == 'UNEVEN':
+            msg += (f"  UNEVEN SLICES: gaps {row['gap_min_mm']}-{row['gap_max_mm']} mm, "
+                    f"typical {row['gap_typical_mm']}, {row['n_uneven_gaps']} odd gap(s)")
+        print(msg)
 
     rep = pd.DataFrame(report)
     rep.to_csv('ct_conversion_report.csv', index=False)
@@ -138,6 +179,13 @@ def main():
     flagged = rep['ct_choice'].str.startswith('LARGEST').sum()
     if flagged:
         print(f"  {flagged} patient(s) had several CTs and no clear RTSTRUCT reference - see report")
+    uneven = rep[rep['spacing_check'] == 'UNEVEN']
+    print(f"\nslice spacing: {int((rep['spacing_check'] == 'ok').sum())} even, {len(uneven)} UNEVEN "
+          f"(largest gap minus smallest gap > 0.5 mm)")
+    if len(uneven):
+        print("  uneven scans (typical gap -> largest gap, number of odd gaps):")
+        for _, r in uneven.iterrows():
+            print(f"    {r['gap_typical_mm']} -> {r['gap_max_mm']} mm, {r['n_uneven_gaps']} odd gap(s)")
     print(f"\nCT volumes in: {a.out}/   details: ct_conversion_report.csv (keep on this PC)")
 
 

@@ -1,8 +1,9 @@
-# LAMMF-on-NSCLC — Change Log & Decision Record
+# LAMMF — Change Log & Decision Record
 
 *Everything we changed from the moment we first tried to boot the original
 LAMMF repo to where we are now (normalization, stratified split, seeds and
-weighted loss done; M1 next). Sections are in the order the work happened.*
+weighted loss done on NSCLC; HNSCC adapters in progress). Sections are in the
+order the work happened.*
 
 ---
 
@@ -15,8 +16,8 @@ radiomics features, a text branch (PubMedBERT over clinical notes), and a
 survival prediction.
 
 **Our goal:** get it running, point it at the **NSCLC-Radiogenomics** lung-cancer
-dataset from TCIA instead of head-and-neck, then improve it. This is *training our
-own model on new data*, not reproducing the paper.
+dataset from TCIA, then improve it. This is *training our own model on new data*,
+not reproducing the paper.
 
 **The problem:** the published repo does **not** run as-is. It had roughly a dozen
 bugs — undefined names, a broken dataset cache, calls into a text model that was
@@ -46,9 +47,8 @@ synthetic data." Grouped by file.
   ```python
   self.data, self.slices = torch.load(self.processed_paths[0], weights_only=False)
   ```
-  (We spent real time understanding *why* `processed_paths[0]` is reused rather
-  than incremented — it's a single cache file per split, overwritten by design,
-  not a bug.)
+  (`processed_paths[0]` is reused rather than incremented on purpose — it's a
+  single cache file per split, overwritten by design.)
 - **Column contract pinned down.** The loader slices features as
   `columns[4:4+1302]`, i.e. it assumes the first four columns are
   `Patient_ID, Component_ID, ROI_Name, Mask_Path` and everything after is
@@ -63,17 +63,14 @@ synthetic data." Grouped by file.
 ### `trainer.py`
 - **It only built ONE model.** The original trainer instantiated a single model,
   so there was no obvious way to train *both* the CNN and the GNN and then fuse.
-  We split the run by branch so you can train each separately.
-- **Rather than editing the file every run**, the plan settled on calling it by
-  branch (`trainer.py gnn`, `trainer.py cnn`) so you don't hand-edit which model
-  builds each time.
+  It now takes the branch as an argument: `trainer.py gnn` / `trainer.py cnn`.
 - **`WeightedBCE` loss was undefined.** The trainer referenced a loss that didn't
   exist. We restored a plain, unweighted BCE criterion to get it running. (The
   class weighting was added back later — see section 9.)
 - **Clarified the metric.** Output is a sigmoid probability; loss is BCE; **AUC**
   is the threshold-free ranking metric we actually trust. Per-branch "accuracy"
-  uses `argmax` on a single-output logit, which is degenerate (always predicts
-  class 0) — reporting only, not to be trusted.
+  uses `argmax` on a single output, which is degenerate (always predicts class 0)
+  — reporting only, not to be trusted.
 
 ### `Model_.py`
 - **The text branch was dead weight.** `Model_TEXT` was referenced but not
@@ -173,13 +170,13 @@ order:
   threshold-free and robust to the class imbalance.
 
 - **Numbers are not yet meaningful — and we know it.** Only **39** usable patients
-  (see below). With ~1 death in a 7-patient test set, per-branch AUC swings between
+  (see below). With ~1 death in a small test set, per-branch AUC swings between
   0 and 1 across runs. This is a *"the machinery works"* milestone, not a
   performance result.
 
 ---
 
-## 4. Current cohort & last run
+## 4. NSCLC cohort & last run
 
 - Downloaded + converted **40** R01 patients that have segmentations (only R01
   patients have SEG masks; AMC patients have none). **R01-022 has an empty mask**
@@ -198,13 +195,13 @@ cluster:
 
 - **GitHub repo + `.gitignore`.** Configured so `git add .` commits **only** code
   (`*.py`) and docs (`*.md`) — all imaging data, generated CSVs, caches, weights,
-  and environment folders are ignored. (Learned the hard way that `.gitignore`
-  comments must be on their **own line**, never trailing a pattern.)
+  and environment folders are ignored. (`.gitignore` comments must be on their
+  **own line**, never trailing a pattern.)
 - **`requirements.txt`** with critical pins: `pydicom==2.4.4` (3.x breaks
   `pydicom-seg`), `numpy<2` (2.x breaks several deps), plus a note to install
   **torch first** from pytorch.org before the rest.
-- **`SETUP.md`** — step-by-step conda setup (Python **3.12**, because 3.13 has no
-  `numpy<2` wheels and needs a C compiler nobody has), torch install, verify block.
+- **`SETUP.md`** — step-by-step setup (Python **3.12**, because 3.13 has no
+  `numpy<2` wheels and needs a C compiler), torch install, verify block.
 - **Windows reality check:** `nvidia-smi` wasn't recognized →
   `Get-CimInstance Win32_VideoController` showed **Intel graphics only** → that
   machine is **CPU-only**. Real full-resolution training will need the **GPU
@@ -212,7 +209,9 @@ cluster:
 - **Mac environment reset.** Conda, pyenv and a PyCharm-made env were all
   competing for `python`, which caused "No module named torch." Replaced with a
   single `.venv` built from pyenv's Python 3.12.14, run from the terminal only
-  (`source .venv/bin/activate` each session).
+  (`source .venv/bin/activate` each session). The project folder later moved to
+  `~/Python/ai_lab/LAMMF_IN_PROGRESS`, which means the venv has to be rebuilt
+  (venvs store their absolute path).
 - **Git:** the GitHub repo had been created with its own starter files, so the
   first push hit "unrelated histories." Merged with
   `--allow-unrelated-histories`, keeping the local versions. Normal workflow is
@@ -220,7 +219,7 @@ cluster:
 
 ---
 
-## 6. Most recent change — feature normalization (backlog D1, ✅ done)
+## 6. Feature normalization (backlog D1, ✅ done)
 
 The 177 MIRP features come out on **wildly different scales**, and were being fed
 raw into the GNN. We added **z-score standardization** (`StandardScaler`):
@@ -255,9 +254,9 @@ sklearn's `train_test_split`:
   features (GNN) always land in the same split — which is what keeps late fusion
   valid (no patient is train for one branch and test for the other).
 
-Honest caveat unchanged: at N≈39 with ~6–7 deaths, stratification guarantees the
-minority isn't *zero* and keeps proportions sane, but can't manufacture
-statistical power. Cross-validation + scale-up remain the real fix.
+Honest caveat: at N≈39 with ~6–7 deaths, stratification guarantees the minority
+isn't *zero* and keeps proportions sane, but can't manufacture statistical power.
+Cross-validation + scale-up remain the real fix.
 
 ---
 
@@ -275,9 +274,8 @@ torch.manual_seed(42)
 `torch.manual_seed` is the one that matters here — it covers weight initialization,
 the DataLoader shuffle, and dropout (all PyTorch). `np.random.seed` is insurance;
 Python's `random` isn't seeded because the trainer doesn't use it. cuDNN
-determinism flags are deferred — they only matter on GPU. This makes every
-subsequent change *measurable*: same seed → same run, so a moved metric is the
-change, not luck.
+determinism flags are deferred — they only matter on GPU. Same seed → same run, so
+a moved metric is the change, not luck.
 
 ---
 
@@ -302,20 +300,43 @@ performance, not the training-time reweighting.
 
 ---
 
-## 10. Where we are & what's next
+## 10. HNSCC dataset (in progress)
 
-**Status:** pipeline runs end-to-end on real data. Four make-it-right fixes are
-in: features **normalized** (D1), split **stratified** (D2), seeds set (T3), and
-loss **weighted** (T1). The model should no longer collapse to "survived."
+A second dataset: **TCIA HNSCC** (head-and-neck squamous cell carcinoma), on the
+advisor's Windows PC. Data never leaves that PC; code goes Mac → GitHub → Windows.
+Strategy: write adapters that produce the same three things the pipeline already
+consumes (`ct/`, `masks/`, `labels_all.csv`), so everything downstream runs
+unchanged.
 
-**Immediate next:** **M1 — move CNN preprocessing out of `forward()`.** The CNN
-currently loads and preprocesses image volumes *inside* `forward()`, every epoch —
-brutally slow and it blocks augmentation. Moving it into the Dataset (cache once)
-makes CNN iteration fast and sets up M2/M3/M6.
+- **`inventory_data.py`** — read-only recon with a PHI-safe printed summary.
+  Found 65 patient folders (~60 usable: CT + RTSTRUCT), all matching the clinical
+  spreadsheet. Tumor contours are in **RTSTRUCT** files (polygons), not masks, and
+  the GTV naming is inconsistent.
+- **`make_labels_hnscc.py`** — simplified temporary rule (backlog L1): alive and
+  cancer-related deaths kept, other deaths removed, 2-year cutoff, alive-but-short
+  follow-up removed.
+- **`convert_ct_hnscc.py`** — picks the CT the RTSTRUCT references (handles
+  patients with two CTs), saves `ct/`, and flags **uneven slice spacing**
+  (backlog H4).
+- **Masks: not started.** Plan is primary GTV only (backlog H1).
 
-**Then, in rough order:** `M2/M3/M6` regularization + normalization + augmentation
-(attack overfitting) → `D5/M4` the GNN-vs-MLP design decision → scale-up on GPU.
-Full detail lives in `ISSUES_BACKLOG.md`.
+Full checklist in `HNSCC_TODO.md`.
 
-**Deferred (advisor/compute-gated):** censoring in labels, 2yr-vs-5yr cutoff,
-head/neck→lung framing, GPU for full-res + full cohort, cross-validation.
+---
+
+## 11. Where we are & what's next
+
+**Status:** NSCLC pipeline runs end-to-end with four make-it-right fixes in:
+features **normalized** (D1), split **stratified** (D2), seeds set (T3), and loss
+**weighted** (T1). HNSCC adapters for labels and CT are written; masks are next.
+
+**Immediate next:** finish the HNSCC adapters (run labels + CT on Windows, settle
+uneven scans and the GTV choice, write the RTSTRUCT → mask converter), then run
+the existing pipeline on HNSCC.
+
+**Then, in rough order:** `M1` move CNN preprocessing out of `forward()` →
+`M2/M3/M6` regularization + normalization + augmentation → `D5/M4` the
+GNN-vs-MLP design decision → scale-up on GPU. Full detail in `ISSUES_BACKLOG.md`.
+
+**Deferred (advisor/compute-gated):** censoring in NSCLC labels, 2yr-vs-5yr
+cutoff, GPU for full-res + full cohort, cross-validation.
