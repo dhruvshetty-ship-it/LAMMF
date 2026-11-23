@@ -15,8 +15,9 @@ For each patient:
        - a named primary ("gtv primary", "gtv bot", "gtv tonsil"...) beats plain "gtv",
          which beats any other gtv name (e.g. "gtv 70")
        - several structures tied at the top are merged into one mask
-  3. fill the contours with rt-utils, line the slices up with the CT by their
-     physical positions, and save masks/<id>.nii.gz with the CT's geometry
+  3. fill the contours directly on the saved CT's grid (each contour point is a
+     real-world position in mm; the CT's geometry turns it into a voxel), and
+     save masks/<id>.nii.gz with the CT's geometry
   4. write masks_report.csv: structure chosen, why, volume, number of separate
      pieces, mean CT value inside the mask, and flags to review
 
@@ -26,7 +27,12 @@ Run on the Windows PC from the LAMMF folder (REAL paths, not .lnk shortcuts):
 (--clinical is optional: it adds each patient's N stage to the report.
  N0 = no lymph nodes involved, so a plain "gtv" must be the primary only.)
 
+If some patients error, fix the cause, then re-run only those:
+    python convert_rtstruct_hnscc.py "V:\\QIXR\\TCIA_H&N\\HNSCC" --retry_errors --clinical "..."
+
 Needs convert_ct_hnscc.py in the same folder (reuses its CT-choice rule).
+Fills the contours itself (pixel counts as tumor if its center is inside the
+outline), so rt-utils / OpenCV aren't needed.
 Printed output has counts only, no patient IDs. masks_report.csv has real IDs:
 keep it on this PC (.gitignore excludes *.csv).
 """
@@ -38,9 +44,9 @@ import argparse
 
 import numpy as np
 import pandas as pd
+import pydicom
 import SimpleITK as sitk
 from scipy import ndimage
-from rt_utils import RTStructBuilder
 
 from convert_ct_hnscc import read_header, find_rt_study, pick_ct
 
@@ -142,39 +148,68 @@ def scan_study(study_dir):
 
 
 # ---------------------------------------------------------------- mask building
-def load_rtstruct(series_dir, rs_path):
-    try:
-        return RTStructBuilder.create_from(dicom_series_path=series_dir,
-                                           rt_struct_path=rs_path, warn_only=True)
-    except TypeError:                       # older rt-utils without warn_only
-        return RTStructBuilder.create_from(dicom_series_path=series_dir,
-                                           rt_struct_path=rs_path)
+def contour_points(rs, names):
+    """All contour polygons (each an N x 3 array of x,y,z in mm) for the chosen structures."""
+    number_of = {str(r.ROIName).strip(): int(r.ROINumber)
+                 for r in getattr(rs, 'StructureSetROISequence', [])}
+    wanted = {number_of[n] for n in names if n in number_of}
+    polys = []
+    for rc in getattr(rs, 'ROIContourSequence', []):
+        if int(getattr(rc, 'ReferencedROINumber', -1)) not in wanted:
+            continue
+        for c in getattr(rc, 'ContourSequence', []):
+            pts = np.array(c.ContourData, dtype=float).reshape(-1, 3)
+            if len(pts) >= 3:                       # skip single points / lines
+                polys.append(pts)
+    return polys
 
 
-def mask_on_ct_grid(rt, names, ct):
+def fill_polygon(ny, nx, cols, rows):
     """
-    rt-utils returns (rows, cols, slices) in ITS slice order. Reorder to the CT's
-    (slices, rows, cols) by matching each CT slice to the rt-utils slice at the
-    same physical position, so nothing depends on how either library sorts files.
+    Pixels whose CENTERS lie inside the polygon (even-odd rule), row by row.
+    cols/rows are the vertices in voxel units; pixel (r, c) has its center at (c, r).
     """
-    m = np.logical_or.reduce([rt.get_roi_mask_by_name(n) for n in names])
-    direction = np.array(ct.GetDirection()).reshape(3, 3)
-    normal = direction[:, 2]                                  # slice-stacking direction
-    z_rt = np.array([np.dot(np.array(ds.ImagePositionPatient, float), normal)
-                     for ds in rt.series_data])
-    nz = ct.GetSize()[2]
-    z_ct = np.array([np.dot(ct.TransformIndexToPhysicalPoint((0, 0, i)), normal)
-                     for i in range(nz)])
-    if m.shape[2] != len(z_rt) or m.shape[0] != ct.GetSize()[1] or m.shape[1] != ct.GetSize()[0]:
-        raise RuntimeError(f'mask shape {m.shape} does not match CT size {ct.GetSize()}')
-    tol = 0.5 * ct.GetSpacing()[2]
-    out = np.zeros((nz, m.shape[0], m.shape[1]), dtype=np.uint8)
-    for i, z in enumerate(z_ct):
-        j = int(np.argmin(np.abs(z_rt - z)))
-        if abs(z_rt[j] - z) > tol:
-            raise RuntimeError(f'CT slice {i} has no RTSTRUCT image slice within {tol:.2f} mm')
-        out[i] = m[:, :, j]
-    return out
+    layer = np.zeros((ny, nx), dtype=np.uint8)
+    c0, r0 = cols, rows
+    c1, r1 = np.roll(cols, -1), np.roll(rows, -1)
+    for r in range(max(int(np.ceil(rows.min())), 0), min(int(np.floor(rows.max())), ny - 1) + 1):
+        crosses = (r0 > r) != (r1 > r)                 # edges that cross this row's center line
+        if not crosses.any():
+            continue
+        xs = np.sort(c0[crosses] + (r - r0[crosses]) * (c1[crosses] - c0[crosses]) / (r1[crosses] - r0[crosses]))
+        for a, b in zip(xs[0::2], xs[1::2]):           # inside between each pair of crossings
+            lo, hi = max(int(np.ceil(a)), 0), min(int(np.floor(b)), nx - 1)
+            if lo <= hi:
+                layer[r, lo:hi + 1] = 1
+    return layer
+
+
+def mask_on_ct_grid(rs_path, names, ct):
+    """
+    Fill the contours directly on the saved CT's voxel grid.
+    Each contour point is a real-world position (mm). The CT's own geometry
+    (origin, spacing, direction) converts it to a voxel position, so the mask
+    can only line up with the CT it will be trained with. Polygons on the same
+    slice are combined with XOR, so a contour inside another one makes a hole.
+    """
+    rs = pydicom.dcmread(rs_path, force=True)
+    polys = contour_points(rs, names)
+    if not polys:
+        raise RuntimeError('the chosen structure has no contour points')
+    nx, ny, nz = ct.GetSize()
+    origin = np.array(ct.GetOrigin())
+    to_mm = np.array(ct.GetDirection()).reshape(3, 3) @ np.diag(ct.GetSpacing())
+    to_voxel = np.linalg.inv(to_mm)
+    mask = np.zeros((nz, ny, nx), dtype=np.uint8)
+    for pts in polys:
+        idx = (pts - origin) @ to_voxel.T          # columns: column, row, slice (voxel units)
+        k = float(idx[:, 2].mean())
+        kk = int(round(k))
+        if abs(k - kk) > 0.3 or not 0 <= kk < nz:
+            raise RuntimeError(f'contour lands at slice position {k:.2f}, not on a CT slice '
+                               f'(CT has {nz} slices of {ct.GetSpacing()[2]:.2f} mm)')
+        mask[kk] ^= fill_polygon(ny, nx, idx[:, 0], idx[:, 1])
+    return mask
 
 
 # ---------------------------------------------------------------- clinical N stage
@@ -199,6 +234,8 @@ def main():
     ap.add_argument('--clinical', help='optional clinical Excel/CSV, to add N stage to the report')
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--overwrite', action='store_true')
+    ap.add_argument('--retry_errors', action='store_true',
+                    help='only re-run patients whose status was ERROR in the last masks_report.csv')
     a = ap.parse_args()
 
     if a.root.lower().endswith('.lnk'):
@@ -209,9 +246,19 @@ def main():
     n_stage = load_n_stage(a.clinical)
 
     pids = sorted(f[:-len('.nii.gz')] for f in os.listdir(a.ct_dir) if f.endswith('.nii.gz'))
+    previous = []
+    if a.retry_errors:
+        if not os.path.exists('masks_report.csv'):
+            sys.exit('--retry_errors needs a masks_report.csv from an earlier run')
+        old = pd.read_csv('masks_report.csv', dtype=str).fillna('')
+        retry = set(old.loc[old['status'].str.startswith('ERROR'), 'Patient_ID'])
+        previous = [r for _, r in old.iterrows() if r['Patient_ID'] not in retry]
+        previous = [dict(r) for r in previous]
+        pids = [p for p in pids if p in retry]
+        print(f"retrying {len(pids)} patient(s) that errored last time")
     if a.limit:
         pids = pids[:a.limit]
-    print(f"patients with a CT in {a.ct_dir}/: {len(pids)}")
+    print(f"patients with a CT in {a.ct_dir}/ to process: {len(pids)}")
 
     rows = []
     for i, pid in enumerate(pids, 1):
@@ -221,7 +268,7 @@ def main():
                'largest_piece_pct': '', 'mean_hu_in_mask': '', 'flags': ''}
         flags = []
         try:
-            if os.path.exists(out_path) and not a.overwrite:
+            if os.path.exists(out_path) and not (a.overwrite or a.retry_errors):
                 row['status'] = 'already done'
                 rows.append(row)
                 print(f"[{i}/{len(pids)}] already done")
@@ -247,8 +294,7 @@ def main():
                 row['status'] = 'skipped: no primary GTV'
             else:
                 ct = sitk.ReadImage(os.path.join(a.ct_dir, f'{pid}.nii.gz'))
-                rt = load_rtstruct(sdir, rs_path)
-                mask = mask_on_ct_grid(rt, chosen, ct)
+                mask = mask_on_ct_grid(rs_path, chosen, ct)
                 n_vox = int(mask.sum())
                 if n_vox == 0:
                     row['status'] = 'skipped: mask is empty'
@@ -278,6 +324,8 @@ def main():
                         flags.append('SEVERAL STRUCTURES MERGED')
         except Exception as e:
             row['status'] = f'ERROR: {type(e).__name__}: {e}'
+        if not row['status'].startswith(('converted', 'already done')) and os.path.exists(out_path):
+            os.remove(out_path)          # don't leave a stale mask from an earlier run
         row['flags'] = '; '.join(flags)
         rows.append(row)
         msg = f"[{i}/{len(pids)}] {row['status']}"
@@ -290,8 +338,9 @@ def main():
             msg += f"  FLAG: {row['flags']}"
         print(msg)
 
-    rep = pd.DataFrame(rows)
+    rep = pd.DataFrame(previous + rows)          # with --retry_errors, keeps the earlier successes
     rep.to_csv('masks_report.csv', index=False)
+    rep = rep.fillna('')
     print("\nsummary:")
     print(rep['status'].str.replace(r':.*', '', regex=True).value_counts().to_string())
     done = rep[rep['status'] == 'converted']

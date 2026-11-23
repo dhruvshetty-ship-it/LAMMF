@@ -28,12 +28,12 @@ openpyxl             # reads the HNSCC clinical Excel sheet
 SimpleITK
 mirp                 # IBSI radiomics (replaces PyRadiomics, which won't install on 3.13)
 
-# ---- HNSCC masks: RTSTRUCT contours -> filled masks ----
-rt-utils
-# rt-utils pulls in OpenCV. OpenCV >= 4.12 requires numpy 2, which would silently
-# upgrade numpy and break pydicom-seg. Hold both OpenCV variants back.
-opencv-python<4.12
-opencv-python-headless<4.12
+# ---- HNSCC masks ----
+# convert_rtstruct_hnscc.py fills the contours itself (numpy + scipy, which comes
+# with scikit-learn), so rt-utils and OpenCV are NOT needed.
+# If you ever install rt-utils or OpenCV anyway: OpenCV >= 4.12 requires numpy 2,
+# which silently upgrades numpy and breaks pydicom-seg. Hold it back with
+#   pip install "numpy<2" "opencv-python<4.12" "opencv-python-headless<4.12"
 
 # ---- deep learning ----
 # NOTE: install torch FIRST from pytorch.org (see setup above), THEN these.
@@ -48,7 +48,7 @@ transformers
 
 # ------------------------------------------------------------------
 # Reference versions known to work together (Windows PC, Nov 2026):
-#   numpy 1.26.4, pydicom 2.4.4, rt-utils + opencv < 4.12.
+#   numpy 1.26.4, pydicom 2.4.4.
 # Earlier reference: torch 2.x, torch_geometric 2.8.x, SimpleITK 2.5.x, mirp 2.5.x,
 #   pandas 2.3.x, scikit-learn 1.7.x, monai 1.6.x, transformers 5.x, joblib 1.5.x
 # ------------------------------------------------------------------

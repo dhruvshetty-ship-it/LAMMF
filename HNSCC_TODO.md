@@ -70,11 +70,17 @@ Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
 
 ### A. Masks — the next piece of work
 - [x] `rt-utils` installed on Windows (Nov 23). It pulled in OpenCV, which upgraded
-      numpy to 2.x; fixed by holding `opencv-python` and `opencv-python-headless`
-      below 4.12 with `numpy<2`. Pinned in `requirements.txt`.
+      numpy to 2.x; fixed by holding OpenCV below 4.12 with `numpy<2`. (Later
+      dropped: the mask script no longer uses rt-utils or OpenCV.)
 - [x] `convert_rtstruct_hnscc.py` written and tested on fake data (Nov 23).
-- [ ] **Run it on Windows**: `--limit 3` first, then everyone. Check the summary
-      and the flagged patients in `masks_report.csv`.
+- [x] First full run (rt-utils version): 23 converted, 9 skipped, 26 errors.
+      23 = "CT slice has no RTSTRUCT image slice" (re-matching rt-utils' slices
+      to the CT failed), 3 = rt-utils crash on outlines without slice links.
+- [x] Rewritten to fill contours directly on the saved CT's grid (pixel counts if
+      its center is inside the outline). No rt-utils/OpenCV. Fake tests exact.
+      Added `--retry_errors`.
+- [ ] **Re-run everyone with `--overwrite`** so all masks come from the same method,
+      then check the summary and the flagged patients in `masks_report.csv`.
 - [ ] Checklist the script covers (kept for reference): If not, use `platipy` or
       fill the contours ourselves with `scikit-image`. Add the winner to `requirements.txt`.
 - [ ] Write `convert_rtstruct_hnscc.py`:
