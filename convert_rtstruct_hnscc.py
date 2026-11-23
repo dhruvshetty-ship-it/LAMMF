@@ -184,7 +184,7 @@ def fill_polygon(ny, nx, cols, rows):
     return layer
 
 
-def mask_on_ct_grid(rs_path, names, ct):
+def mask_on_ct_grid(rs, names, ct):
     """
     Fill the contours directly on the saved CT's voxel grid.
     Each contour point is a real-world position (mm). The CT's own geometry
@@ -192,7 +192,6 @@ def mask_on_ct_grid(rs_path, names, ct):
     can only line up with the CT it will be trained with. Polygons on the same
     slice are combined with XOR, so a contour inside another one makes a hole.
     """
-    rs = pydicom.dcmread(rs_path, force=True)
     polys = contour_points(rs, names)
     if not polys:
         raise RuntimeError('the chosen structure has no contour points')
@@ -288,13 +287,16 @@ def main():
             else:
                 raise RuntimeError('no RTSTRUCT for this CT')
 
-            chosen, reason, excluded = choose_structures(names)
-            row.update(chosen='; '.join(chosen), reason=reason, excluded_gtv_like='; '.join(excluded))
+            rs = pydicom.dcmread(rs_path, force=True)
+            drawn = [n for n in names if contour_points(rs, [n])]   # ignore empty placeholder structures
+            empty = [f'{n} (empty)' for n in names if n not in drawn and classify(n) is not None]
+            chosen, reason, excluded = choose_structures(drawn)
+            row.update(chosen='; '.join(chosen), reason=reason, excluded_gtv_like='; '.join(excluded + empty))
             if not chosen:
                 row['status'] = 'skipped: no primary GTV'
             else:
                 ct = sitk.ReadImage(os.path.join(a.ct_dir, f'{pid}.nii.gz'))
-                mask = mask_on_ct_grid(rs_path, chosen, ct)
+                mask = mask_on_ct_grid(rs, chosen, ct)
                 n_vox = int(mask.sum())
                 if n_vox == 0:
                     row['status'] = 'skipped: mask is empty'

@@ -79,8 +79,15 @@ Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
 - [x] Rewritten to fill contours directly on the saved CT's grid (pixel counts if
       its center is inside the outline). No rt-utils/OpenCV. Fake tests exact.
       Added `--retry_errors`.
-- [ ] **Re-run everyone with `--overwrite`** so all masks come from the same method,
-      then check the summary and the flagged patients in `masks_report.csv`.
+- [x] Second full run: 26 converted, 8 skipped, 24 errors. 22 = "contour lands at
+      slice position -N": the saved CT was **flipped top-to-bottom** (SimpleITK's
+      file order ran top-down for those scans while the volume was labeled
+      bottom-up). 2 = empty placeholder GTV structures.
+- [x] Fixed: `convert_ct_hnscc.py` now sorts slices by physical position itself and
+      refuses to save a volume whose first/last slice isn't where its file says.
+      Mask script skips empty structures. Fake tests confirm both.
+- [ ] **Re-run CTs, then masks, both with `--overwrite`**, then check the summary and
+      the flagged patients in `masks_report.csv`.
 - [ ] Checklist the script covers (kept for reference): If not, use `platipy` or
       fill the contours ourselves with `scikit-image`. Add the winner to `requirements.txt`.
 - [ ] Write `convert_rtstruct_hnscc.py`:

@@ -8,7 +8,9 @@ For each patient folder:
        - only one CT            -> use it
        - several CTs            -> use the one the RTSTRUCT says it was drawn on
        - several, no reference  -> use the largest, and flag it
-  4. check slice spacing (flags missing slices / mixed slice thickness)
+  4. sort the slices by their physical position (so the saved volume can't be
+     flipped top-to-bottom) and check slice spacing (flags missing slices /
+     mixed slice thickness)
   5. read it with SimpleITK and save ct/<Patient_ID>.nii.gz
      - UNEVEN scans are saved to ct_uneven/ instead, so the rest of the pipeline
        skips them (an uneven scan left in ct/ by an older run gets moved there)
@@ -91,20 +93,32 @@ def series_files(series_dir, uid):
     return files
 
 
-def slice_gaps(files):
+def sort_by_position(files):
     """
-    Distances (mm) between consecutive slices, from each slice's own position header.
-    A normal scan has (nearly) identical gaps; a missing slice or mixed slice
-    thickness shows up as one or more gaps that differ from the rest.
+    Sort slices by their physical position along the slice-stacking direction
+    (the cross product of the image row and column directions).
+    SimpleITK labels the volume as running along that direction, so the files
+    must be in that order too. Its own file sorting can fall back to e.g. the
+    instance number, which may run the other way and silently flip the scan.
+    Returns the sorted files and their sorted positions (mm).
     """
     pos = []
     for f in files:
         h = read_header(f)
         ipp = np.array(h.ImagePositionPatient, dtype=float)
         iop = np.array(h.ImageOrientationPatient, dtype=float)
-        normal = np.cross(iop[:3], iop[3:])          # direction the slices are stacked in
-        pos.append(float(ipp @ normal))
-    gaps = np.diff(np.sort(pos))
+        pos.append(float(ipp @ np.cross(iop[:3], iop[3:])))
+    order = np.argsort(pos)
+    return [files[i] for i in order], np.array(pos)[order]
+
+
+def slice_gaps(pos_sorted):
+    """
+    Distances (mm) between consecutive slices. A normal scan has (nearly)
+    identical gaps; a missing slice or mixed slice thickness shows up as one or
+    more gaps that differ from the rest.
+    """
+    gaps = np.diff(pos_sorted)
     med = float(np.median(gaps))
     n_off = int((np.abs(gaps - med) > 0.1).sum())    # gaps more than 0.1 mm from typical
     return float(gaps.min()), float(gaps.max()), med, n_off
@@ -113,7 +127,15 @@ def slice_gaps(files):
 def read_ct(files):
     reader = sitk.ImageSeriesReader()
     reader.SetFileNames(files)
-    return reader.Execute()
+    img = reader.Execute()
+    # safety check: the first and last slices must sit where their files say they are
+    for idx, f in ((0, files[0]), (img.GetSize()[2] - 1, files[-1])):
+        want = np.array(read_header(f).ImagePositionPatient, dtype=float)
+        got = np.array(img.TransformIndexToPhysicalPoint((0, 0, idx)))
+        if np.linalg.norm(got - want) > 1.0:
+            raise RuntimeError(f'saved slice {idx} would be {np.linalg.norm(got - want):.1f} mm '
+                               f'away from its DICOM position - geometry not trusted')
+    return img
 
 
 def main():
@@ -152,8 +174,8 @@ def main():
                     row['status'] = 'skipped: no CT series'
                 else:
                     (sdir, uid, _), why = pick_ct(cts, refs)
-                    files = series_files(sdir, uid)
-                    gmin, gmax, gmed, n_off = slice_gaps(files)
+                    files, pos = sort_by_position(series_files(sdir, uid))
+                    gmin, gmax, gmed, n_off = slice_gaps(pos)
                     row.update(ct_choice=why, slices=len(files), gap_min_mm=round(gmin, 2),
                                gap_max_mm=round(gmax, 2), gap_typical_mm=round(gmed, 2),
                                n_uneven_gaps=n_off,
