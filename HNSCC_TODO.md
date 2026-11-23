@@ -69,7 +69,13 @@ Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
 ## Before training can run
 
 ### A. Masks — the next piece of work
-- [ ] **First step:** check `rt-utils` installs alongside `pydicom==2.4.4`. If not, use `platipy` or
+- [x] `rt-utils` installed on Windows (Nov 23). It pulled in OpenCV, which upgraded
+      numpy to 2.x; fixed by holding `opencv-python` and `opencv-python-headless`
+      below 4.12 with `numpy<2`. Pinned in `requirements.txt`.
+- [x] `convert_rtstruct_hnscc.py` written and tested on fake data (Nov 23).
+- [ ] **Run it on Windows**: `--limit 3` first, then everyone. Check the summary
+      and the flagged patients in `masks_report.csv`.
+- [ ] Checklist the script covers (kept for reference): If not, use `platipy` or
       fill the contours ourselves with `scikit-image`. Add the winner to `requirements.txt`.
 - [ ] Write `convert_rtstruct_hnscc.py`:
   - [ ] Only for patients with a CT in `ct\` (the 58); build each mask on that CT's grid.

@@ -58,7 +58,8 @@ improvements. ★ = highest value. Tackle data first (per plan).
       whether "other cancer" should count. Alive patients followed < cutoff are removed.
       Cutoff is **5 years** by default. At 2 years only 4 of 56 labeled patients were
       deaths (7%), too few to split or evaluate.
-- [ ] ★ **H1 — Masks: rules decided, converter not written.** Primary GTV only.
+- [ ] ★ **H1 — Masks: converter written (`convert_rtstruct_hnscc.py`), not yet run
+      on real data.** Primary GTV only.
       Names vary (`gtv`, `gtv primary`, `gtv bot`, `gtv tonsil`...); plain `gtv`
       (34 patients) treated as primary unless evidence says it includes nodes
       (N stage, separate node structure, mask in several pieces). Exclude
