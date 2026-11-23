@@ -63,8 +63,9 @@ improvements. ★ = highest value. Tackle data first (per plan).
       (34 patients) treated as primary unless evidence says it includes nodes
       (N stage, separate node structure, mask in several pieces). Exclude
       `ptv70_nogtv`. Pre/post-chemo → **post-chemo** (matches the planning CT).
-      8 patients with no GTV → **drop** (likely tumor removed by surgery), after
-      checking their structure names. Next: check rt-utils installs, then write
+      8 patients with no GTV → **dropped**: checked, they have only organs,
+      helpers and CTV/PTV margins (some plans reach 70–72 Gy, so a GTV may simply
+      not have been drawn). Later rescue option: highest-dose CTV, but inconsistent. Next: check rt-utils installs, then write
       `convert_rtstruct_hnscc.py`.
 - [ ] **H2 — Only 65 patient folders found (~60 usable), not ~130.** Ask advisor whether
       more data exists. Spreadsheet covers 215 patients.

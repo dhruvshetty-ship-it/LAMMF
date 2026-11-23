@@ -25,10 +25,12 @@ Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
 - **Primary GTV only**, no lymph-node GTVs.
 - **Pre- vs post-chemo: use post-chemo.** The CT is the radiation-planning scan,
   taken after induction chemo, so the post-chemo outline matches what's on it.
-- **The 8 patients with no GTV: drop them**, assuming the tumor was surgically
-  removed before radiation. Check first: open `inventory_details.csv` on the PC
-  and look at their `roi_names`. Keep them if a structure is clearly the tumor
-  under another name (e.g. "tumor", "primary").
+- **The 8 patients with no GTV: dropped (checked Nov 23).** Their structures are
+  only organs, planning helpers and CTV/PTV margin volumes; none outlines the
+  tumor itself. Several plans reach 70–72 Gy, so for some the tumor was likely
+  still in place and a GTV just wasn't drawn. Possible later rescue: use the
+  highest-dose CTV, but it's the tumor plus a margin, so it would be inconsistent
+  with the other masks.
 - **Plain `gtv` (34 patients)**: treat as primary unless evidence says it includes
   nodes (N stage > 0 with no separate node structure, and a mask in several pieces).
 - Advisor: tell them these defaults as a heads-up; don't wait on an answer.
@@ -46,7 +48,7 @@ Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
 
 ### 1. Quick checks at the start of next session
 - [ ] Windows: confirm `(Get-ChildItem ct).Count` = 58 and `ct_uneven` = 3.
-- [ ] Windows: look at the 8 no-GTV patients' `roi_names` in `inventory_details.csv`.
+- [x] Windows: looked at the 8 no-GTV patients' `roi_names` → no tumor outline, dropped.
 - [ ] Mac (only needed to run code there): the project folder moved to
       `~/Python/ai_lab/LAMMF_IN_PROGRESS`, so rebuild the venv (`conda deactivate`
       first): `rm -rf .venv` → `python -m venv .venv` → `source .venv/bin/activate` →
