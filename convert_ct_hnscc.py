@@ -199,6 +199,10 @@ def main():
                                    spacing_xyz_mm=str(tuple(round(s, 2) for s in img.GetSpacing())))
         except Exception as e:
             row['status'] = f'ERROR: {type(e).__name__}: {e}'
+        if row['status'].startswith(('ERROR', 'skipped')):
+            for stale in (out_path, os.path.join(a.uneven_out, f'{pid}.nii.gz')):
+                if os.path.exists(stale):
+                    os.remove(stale)     # don't leave an old (possibly wrong) CT from an earlier run
         report.append(row)
         msg = f"[{i}/{len(patients)}] {row['status']}"
         if row['ct_choice']:
