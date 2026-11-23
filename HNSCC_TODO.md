@@ -86,6 +86,14 @@ Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
 - [x] Fixed: `convert_ct_hnscc.py` now sorts slices by physical position itself and
       refuses to save a volume whose first/last slice isn't where its file says.
       Mask script skips empty structures. Fake tests confirm both.
+- [x] Re-run of CTs with position sorting: 29 "geometry not trusted". Diagnostic
+      (`diagnose_ct_geometry.py`) showed the scans are perfectly regular (no tilt,
+      2.5 mm gaps, files in order) but **SimpleITK labels the slice direction as
+      pointing down** on these scans. That was the real cause of the earlier flips too.
+- [x] Fixed: `convert_ct_hnscc.py` now reads pixels with SimpleITK but sets the
+      geometry itself from the DICOM headers, and checks every slice. Tests with a
+      simulated SimpleITK mislabel reproduce the PC's numbers exactly (0 / 5 mm / 2x
+      scan length) and the new version is exact.
 - [ ] **Re-run CTs, then masks, both with `--overwrite`**, then check the summary and
       the flagged patients in `masks_report.csv`.
 - [ ] Checklist the script covers (kept for reference): If not, use `platipy` or

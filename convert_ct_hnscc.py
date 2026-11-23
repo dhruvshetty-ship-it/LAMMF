@@ -11,7 +11,10 @@ For each patient folder:
   4. sort the slices by their physical position (so the saved volume can't be
      flipped top-to-bottom) and check slice spacing (flags missing slices /
      mixed slice thickness)
-  5. read it with SimpleITK and save ct/<Patient_ID>.nii.gz
+  5. read the pixels with SimpleITK, set the geometry (origin, orientation,
+     spacing) ourselves from the DICOM headers - SimpleITK's own slice direction
+     is wrong on many HNSCC scans - check every slice lands where its file says,
+     and save ct/<Patient_ID>.nii.gz
      - UNEVEN scans are saved to ct_uneven/ instead, so the rest of the pipeline
        skips them (an uneven scan left in ct/ by an older run gets moved there)
 
@@ -124,17 +127,40 @@ def slice_gaps(pos_sorted):
     return float(gaps.min()), float(gaps.max()), med, n_off
 
 
-def read_ct(files):
+def read_ct(files, pos, strict=True):
+    """
+    Read the pixel data with SimpleITK (slice i = files[i], already sorted by
+    position), then set the geometry OURSELVES from the DICOM headers.
+    SimpleITK's own z-direction can't be trusted on this data: on many HNSCC
+    scans it labels the slice direction as pointing down while the slices go up,
+    which flips every position along the body.
+
+    Safety check: every saved slice must sit within 1 mm of where its own DICOM
+    file says it is (strict=True), or just the first and last slice (strict=False,
+    used for uneven scans, which can't be stored exactly anyway).
+    """
     reader = sitk.ImageSeriesReader()
     reader.SetFileNames(files)
     img = reader.Execute()
-    # safety check: the first and last slices must sit where their files say they are
-    for idx, f in ((0, files[0]), (img.GetSize()[2] - 1, files[-1])):
-        want = np.array(read_header(f).ImagePositionPatient, dtype=float)
+
+    h0 = read_header(files[0])
+    iop = np.array(h0.ImageOrientationPatient, dtype=float)
+    row_dir, col_dir = iop[:3], iop[3:]
+    normal = np.cross(row_dir, col_dir)
+    ps = [float(v) for v in h0.PixelSpacing]            # DICOM: [between rows, between columns]
+    nz = img.GetSize()[2]
+    dz = (pos[-1] - pos[0]) / (nz - 1) if nz > 1 else float(getattr(h0, 'SliceThickness', 1.0))
+    img.SetOrigin(tuple(float(v) for v in h0.ImagePositionPatient))
+    img.SetSpacing((ps[1], ps[0], float(dz)))           # x = along a row, y = down a column, z = between slices
+    img.SetDirection(tuple(np.column_stack([row_dir, col_dir, normal]).ravel()))
+
+    ipps = [np.array(read_header(f).ImagePositionPatient, dtype=float) for f in files]
+    for idx in (range(nz) if strict else (0, nz - 1)):
         got = np.array(img.TransformIndexToPhysicalPoint((0, 0, idx)))
-        if np.linalg.norm(got - want) > 1.0:
-            raise RuntimeError(f'saved slice {idx} would be {np.linalg.norm(got - want):.1f} mm '
-                               f'away from its DICOM position - geometry not trusted')
+        off = np.linalg.norm(got - ipps[idx])
+        if off > 1.0:
+            raise RuntimeError(f'saved slice {idx} would be {off:.1f} mm away from its DICOM '
+                               f'position - geometry not trusted')
     return img
 
 
@@ -192,7 +218,7 @@ def main():
                         row['status'] = 'already done' + (f' ({a.uneven_out})' if uneven else '')
                     else:
                         os.makedirs(os.path.dirname(dest), exist_ok=True)
-                        img = read_ct(files)
+                        img = read_ct(files, pos, strict=not uneven)
                         sitk.WriteImage(img, dest)
                         row.update(status='converted' + (f' to {a.uneven_out} (uneven)' if uneven else ''),
                                    size_xyz=str(img.GetSize()),
