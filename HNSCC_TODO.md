@@ -1,6 +1,6 @@
 # HNSCC dataset — to-do log
 
-*Started Oct 9, 2026; refreshed Nov 13, 2026. Data lives only on the advisor's
+*Started Oct 9, 2026; last updated Nov 13, 2026 (end of session). Data lives only on the advisor's
 Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
 (`~/Python/ai_lab/LAMMF_IN_PROGRESS`) → GitHub → Windows.*
 
@@ -13,62 +13,67 @@ Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
   it by `TCIA code`.
 - **CT conversion done** (`convert_ct_hnscc.py`): 61 CTs, 4 skipped (PET only).
   3 had **uneven slice spacing**; all 3 were survivors, so they're dropped into
-  `ct_uneven/`. **58 usable CTs** in `ct/`.
+  `ct_uneven/`. Re-run done on Windows with the new script, so `ct/` should hold
+  **58 usable CTs** (confirm: `(Get-ChildItem ct).Count` → 58,
+  `(Get-ChildItem ct_uneven).Count` → 3).
 - **Labels done** (`make_labels_hnscc.py`, 5-year cutoff, simplified rule L1):
   **55 labeled: 45 survived / 10 died.** (2-year cutoff had given only 4 deaths.)
-- **Masks not started.** Waiting on the GTV choice (backlog H1).
+- **Masks: next.** GTV rules decided (defaults below), so nothing blocks it.
+
+## Decisions made for the masks (backlog H1)
+
+- **Primary GTV only**, no lymph-node GTVs.
+- **Pre- vs post-chemo: use post-chemo.** The CT is the radiation-planning scan,
+  taken after induction chemo, so the post-chemo outline matches what's on it.
+- **The 8 patients with no GTV: drop them**, assuming the tumor was surgically
+  removed before radiation. Check first: open `inventory_details.csv` on the PC
+  and look at their `roi_names`. Keep them if a structure is clearly the tumor
+  under another name (e.g. "tumor", "primary").
+- **Plain `gtv` (34 patients)**: treat as primary unless evidence says it includes
+  nodes (N stage > 0 with no separate node structure, and a mask in several pieces).
+- Advisor: tell them these defaults as a heads-up; don't wait on an answer.
 
 ---
 
+## Done so far
+- [x] Inventory (65 folders, ~60 usable)
+- [x] Labels at 5-year cutoff: 55 labeled, 45 survived / 10 died
+- [x] CTs converted: 58 usable in `ct\`, 3 uneven moved to `ct_uneven\`, 4 PET-only skipped
+- [x] Uneven scans decided (backlog H4): dropped, all 3 were survivors
+- [x] GTV rules decided (see "Decisions made for the masks" above)
+
 ## Next up
 
-### 1. Mac housekeeping
-- [ ] The project folder moved, so rebuild the venv (`conda deactivate` first):
-      `rm -rf .venv` → `python -m venv .venv` → `source .venv/bin/activate` →
+### 1. Quick checks at the start of next session
+- [ ] Windows: confirm `(Get-ChildItem ct).Count` = 58 and `ct_uneven` = 3.
+- [ ] Windows: look at the 8 no-GTV patients' `roi_names` in `inventory_details.csv`.
+- [ ] Mac (only needed to run code there): the project folder moved to
+      `~/Python/ai_lab/LAMMF_IN_PROGRESS`, so rebuild the venv (`conda deactivate`
+      first): `rm -rf .venv` → `python -m venv .venv` → `source .venv/bin/activate` →
       `python -m pip install --upgrade pip` → `python -m pip install torch` →
       `python -m pip install -r requirements.txt`
-- [ ] Copy in the regenerated files (`convert_ct_hnscc.py`, `HNSCC_TODO.md`,
-      `ISSUES_BACKLOG.md`, `CHANGELOG.md`, `PROGRESS_SUMMARY.md`), then
-      `git add .` → `git commit -m "..."` → `git push`.
 
-### 2. Run the scripts (Windows)
-- [ ] `git pull`
-- [ ] Check that `ct\` only holds `HNSCC-...` files. If old fake smoke-test files
-      (`R01-...`) or old `masks\`, `dataset\` or `labels_all.csv` are there, delete them.
-- [ ] Labels:
-      `python make_labels_hnscc.py "<clinical.xlsx>" --patients_root "V:\QIXR\TCIA_H&N\HNSCC"`
-  - [ ] Check each cause-of-death category landed in the right bucket (kept vs removed).
-        Watch for anything like "other cancer".
-  - [ ] Record the final count: how many labeled, how many died vs survived.
-- [ ] CTs: `python convert_ct_hnscc.py "V:\QIXR\TCIA_H&N\HNSCC"`
-  - [ ] Expect ~61 converted, 4 skipped, no errors.
-  - [ ] Record the **slice spacing** summary: how many scans are UNEVEN, and how bad.
-
-### 3. Uneven scans (backlog H4) — DECIDED
-- [x] 3 uneven, all survivors → dropped. Re-run `convert_ct_hnscc.py` once after
-      pulling, so it moves them from `ct\` to `ct_uneven\`. Then `ct\` should hold 58.
-
-### 4. Message your advisor
-- [ ] Is 65 folders the full dataset, or are ~65 more patients somewhere else?
-- [ ] Primary GTV only (agreed). For patients with both, pre-chemo or post-chemo GTV?
-- [ ] 8 patients have no GTV-named structure. Exclude them?
+### 2. Message your advisor
+- [ ] Is 65 folders the full dataset? The spreadsheet has 215 patients; the other
+      ~150 patients' scans would roughly triple the deaths (only 10 now).
+- [ ] Heads-up on the mask defaults: primary GTV only, post-chemo GTV, drop the
+      8 with no GTV.
 - [ ] OK to use the simplified label rule for now (cancer deaths only, other deaths
       removed, 5-year cutoff)? Should "Other Cancer" deaths (2 patients) count?
-- [ ] Mention any uneven-slice scans found.
+- [ ] Mention the 3 uneven-slice scans that were dropped.
 
 ---
 
 ## Before training can run
 
-### A. Masks — the main blocker
-- [ ] Get the GTV answers from step 4.
-- [ ] Settle the uneven-scan question first: the mask must sit on exactly the same
-      grid as the saved CT.
-- [ ] Check `rt-utils` installs alongside `pydicom==2.4.4`. If not, use `platipy` or
+### A. Masks — the next piece of work
+- [ ] **First step:** check `rt-utils` installs alongside `pydicom==2.4.4`. If not, use `platipy` or
       fill the contours ourselves with `scikit-image`. Add the winner to `requirements.txt`.
 - [ ] Write `convert_rtstruct_hnscc.py`:
+  - [ ] Only for patients with a CT in `ct\` (the 58); build each mask on that CT's grid.
   - [ ] Choose the primary GTV per patient by name. Clear primaries: `gtv primary`,
         `gtv bot`, `gtv tonsil`. Exclude node structures and `ptv70_nogtv`.
+        Where pre- and post-chemo GTVs both exist, take post-chemo.
   - [ ] For plain `gtv` (34 patients), decide if it's primary-only. Evidence: N0
         stage in the spreadsheet, a separate node structure existing, or the mask
         being one piece rather than several.

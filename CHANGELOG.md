@@ -317,9 +317,15 @@ unchanged.
   removed. Cutoff raised from 2 to **5 years** by default, because 2 years left
   only 4 deaths among 56 labeled patients.
 - **`convert_ct_hnscc.py`** — picks the CT the RTSTRUCT references (handles
-  patients with two CTs), saves `ct/`, and flags **uneven slice spacing**
-  (backlog H4).
-- **Masks: not started.** Plan is primary GTV only (backlog H1).
+  patients with two CTs), saves `ct/`, and checks slice spacing. Full run:
+  61 CTs, 4 PET-only skipped. 3 had **uneven slice spacing** (worst: a 1.1 m gap,
+  i.e. two scans mixed in one series); SimpleITK averages the gaps, so those
+  volumes are distorted. All 3 were survivors, so uneven scans are now saved to
+  `ct_uneven/` and left out → **58 usable CTs** (backlog H4).
+- **Labels result:** 55 labeled at the 5-year cutoff, 45 survived / 10 died.
+- **Mask rules decided, converter not written yet** (backlog H1): primary GTV
+  only; post-chemo GTV where both exist; drop the 8 patients with no GTV
+  (likely surgically removed tumors).
 
 Full checklist in `HNSCC_TODO.md`.
 
@@ -329,11 +335,11 @@ Full checklist in `HNSCC_TODO.md`.
 
 **Status:** NSCLC pipeline runs end-to-end with four make-it-right fixes in:
 features **normalized** (D1), split **stratified** (D2), seeds set (T3), and loss
-**weighted** (T1). HNSCC adapters for labels and CT are written; masks are next.
+**weighted** (T1). HNSCC labels and CTs are done (55 labeled, 58 usable CTs);
+masks are next.
 
-**Immediate next:** finish the HNSCC adapters (run labels + CT on Windows, settle
-uneven scans and the GTV choice, write the RTSTRUCT → mask converter), then run
-the existing pipeline on HNSCC.
+**Immediate next:** check rt-utils installs, write the RTSTRUCT → mask converter
+using the decided GTV rules, then run the existing pipeline on HNSCC.
 
 **Then, in rough order:** `M1` move CNN preprocessing out of `forward()` →
 `M2/M3/M6` regularization + normalization + augmentation → `D5/M4` the

@@ -17,8 +17,9 @@ Windows PC).
   with real IBSI radiomics features.
 - **Numbers are not yet meaningful** (only 39 usable NSCLC patients, tiny test
   set) — a "the machinery works" milestone, not a performance one.
-- **HNSCC:** inventory done, labels + CT adapters written, masks not started.
-  Details in HNSCC_TODO.md.
+- **HNSCC:** inventory done; labels done (55 labeled at a 5-year cutoff:
+  45 survived / 10 died); CTs done (58 usable, 3 uneven-slice scans dropped).
+  Mask rules decided; mask converter is next. Details in HNSCC_TODO.md.
 
 ## The NSCLC data pipeline (built + tested, in order)
 Raw TCIA download (DICOM CT + DICOM-SEG masks + clinical CSV) ->
@@ -41,9 +42,10 @@ Raw TCIA download (DICOM CT + DICOM-SEG masks + clinical CSV) ->
 
 ## The HNSCC adapters (replace steps 1–3 above for the new data)
 - **inventory_data.py** — read-only recon; PHI-safe printed summary.
-- **make_labels_hnscc.py** — spreadsheet -> `labels_all.csv` (simplified rule, L1).
+- **make_labels_hnscc.py** — spreadsheet -> `labels_all.csv` (simplified rule L1,
+  5-year cutoff by default).
 - **convert_ct_hnscc.py** — DICOM CT -> `ct/`; picks the CT the RTSTRUCT
-  references; flags uneven slice spacing.
+  references; uneven-slice scans go to `ct_uneven/` instead.
 - **convert_rtstruct_hnscc.py** — TO WRITE: RTSTRUCT primary GTV -> `masks/`.
 
 ## NSCLC cohort
@@ -86,8 +88,8 @@ Censoring in NSCLC labels (148 "alive" not follow-up-checked), cutoff choice
 (2yr/5yr), GPU needed for full-res + full cohort.
 
 ## Next steps
-- HNSCC: push regenerated files, run labels + full CT conversion on Windows,
-  decide on uneven scans, get advisor answers on GTV, then write the mask converter.
+- HNSCC: check rt-utils installs, then write the mask converter
+  (`convert_rtstruct_hnscc.py`) with the decided GTV rules.
 - After that: run the existing pipeline on HNSCC.
 - Full ordered list in HNSCC_TODO.md and ISSUES_BACKLOG.md.
 

@@ -58,11 +58,14 @@ improvements. ★ = highest value. Tackle data first (per plan).
       whether "other cancer" should count. Alive patients followed < cutoff are removed.
       Cutoff is **5 years** by default. At 2 years only 4 of 56 labeled patients were
       deaths (7%), too few to split or evaluate.
-- [ ] ★ **H1 — Mask structure not chosen yet.** Plan: primary GTV only. Names vary
-      (`gtv`, `gtv primary`, `gtv bot`, `gtv tonsil`...); plain `gtv` (34 patients) may
-      include nodes. Ideas: use N stage (N0 = primary only), separate node structure
-      present, count mask pieces. 8 patients have no GTV-named structure. Exclude
-      `ptv70_nogtv`. Pre- vs post-chemo GTV still to ask advisor.
+- [ ] ★ **H1 — Masks: rules decided, converter not written.** Primary GTV only.
+      Names vary (`gtv`, `gtv primary`, `gtv bot`, `gtv tonsil`...); plain `gtv`
+      (34 patients) treated as primary unless evidence says it includes nodes
+      (N stage, separate node structure, mask in several pieces). Exclude
+      `ptv70_nogtv`. Pre/post-chemo → **post-chemo** (matches the planning CT).
+      8 patients with no GTV → **drop** (likely tumor removed by surgery), after
+      checking their structure names. Next: check rt-utils installs, then write
+      `convert_rtstruct_hnscc.py`.
 - [ ] **H2 — Only 65 patient folders found (~60 usable), not ~130.** Ask advisor whether
       more data exists. Spreadsheet covers 215 patients.
 - [ ] **H3 — Docs say lung (NSCLC); HNSCC is head-and-neck.** Update README etc. once
