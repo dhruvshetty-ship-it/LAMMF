@@ -217,7 +217,8 @@ def main():
     for i, pid in enumerate(pids, 1):
         out_path = os.path.join(a.out, f'{pid}.nii.gz')
         row = {'Patient_ID': pid, 'status': '', 'chosen': '', 'reason': '', 'N_stage': n_stage.get(pid, ''),
-               'excluded_gtv_like': '', 'volume_cc': '', 'n_pieces': '', 'mean_hu_in_mask': '', 'flags': ''}
+               'excluded_gtv_like': '', 'volume_cc': '', 'n_pieces': '', 'piece_sizes_cc': '',
+               'largest_piece_pct': '', 'mean_hu_in_mask': '', 'flags': ''}
         flags = []
         try:
             if os.path.exists(out_path) and not a.overwrite:
@@ -256,10 +257,17 @@ def main():
                     img = sitk.GetImageFromArray(mask)
                     img.CopyInformation(ct)
                     sitk.WriteImage(img, out_path)
-                    _, n_pieces = ndimage.label(mask, structure=np.ones((3, 3, 3)))
+                    labeled, n_pieces = ndimage.label(mask, structure=np.ones((3, 3, 3)))
+                    voxel_cc = np.prod(ct.GetSpacing()) / 1000
+                    sizes = np.sort(np.bincount(labeled.ravel())[1:])[::-1] * voxel_cc   # cc, largest first
+                    shown = ', '.join(f'{s:.2f}' for s in sizes[:6])
+                    if n_pieces > 6:
+                        shown += f' (+{n_pieces - 6} more)'
                     hu = sitk.GetArrayFromImage(ct)[mask.astype(bool)].mean()
-                    row.update(status='converted', volume_cc=round(n_vox * np.prod(ct.GetSpacing()) / 1000, 1),
-                               n_pieces=int(n_pieces), mean_hu_in_mask=round(float(hu), 1))
+                    row.update(status='converted', volume_cc=round(n_vox * voxel_cc, 1),
+                               n_pieces=int(n_pieces), piece_sizes_cc=shown,
+                               largest_piece_pct=round(100 * sizes[0] / sizes.sum(), 1),
+                               mean_hu_in_mask=round(float(hu), 1))
                     if n_pieces > 1 and 'plain gtv' in reason:
                         flags.append('PLAIN GTV IN SEVERAL PIECES (may include nodes)')
                     if hu < -300:
@@ -274,7 +282,10 @@ def main():
         rows.append(row)
         msg = f"[{i}/{len(pids)}] {row['status']}"
         if row['status'] == 'converted':
-            msg += f"  ({row['reason']}, {row['volume_cc']} cc, {row['n_pieces']} piece(s))"
+            msg += f"  ({row['reason']}, {row['volume_cc']} cc, {row['n_pieces']} piece(s)"
+            if row['n_pieces'] > 1:
+                msg += f": {row['piece_sizes_cc']} cc, largest = {row['largest_piece_pct']}%"
+            msg += ", mean CT " + f"{row['mean_hu_in_mask']} HU)"
         if flags:
             msg += f"  FLAG: {row['flags']}"
         print(msg)
