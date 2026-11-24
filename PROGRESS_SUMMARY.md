@@ -1,8 +1,8 @@
 # LAMMF — Progress Summary
 
 *Living snapshot. Source of truth for the project — keep this current.*
-*Last updated: Nov 13, 2026 — four make-it-right fixes done on NSCLC; HNSCC
-data adapters in progress (see HNSCC_TODO.md).*
+*Last updated: Nov 23, 2026 — four make-it-right fixes done on NSCLC; HNSCC
+data setup complete, full pipeline run is next (see HNSCC_TODO.md).*
 
 ## The task
 Get the LAMMF multimodal survival model (3D CNN + GNN + late fusion) working,
@@ -17,9 +17,9 @@ Windows PC).
   with real IBSI radiomics features.
 - **Numbers are not yet meaningful** (only 39 usable NSCLC patients, tiny test
   set) — a "the machinery works" milestone, not a performance one.
-- **HNSCC:** inventory done; labels done (55 labeled at a 5-year cutoff:
-  45 survived / 10 died); CTs done (58 usable, 3 uneven-slice scans dropped).
-  Mask rules decided; mask converter is next. Details in HNSCC_TODO.md.
+- **HNSCC: data setup complete.** Labels: 55 at a 5-year cutoff (45 survived /
+  10 died). CTs: 58 usable. Masks: 48 (primary GTV). Next: run the full pipeline
+  (block in HNSCC_TODO.md). Details in HNSCC_TODO.md.
 
 ## The NSCLC data pipeline (built + tested, in order)
 Raw TCIA download (DICOM CT + DICOM-SEG masks + clinical CSV) ->
@@ -45,8 +45,11 @@ Raw TCIA download (DICOM CT + DICOM-SEG masks + clinical CSV) ->
 - **make_labels_hnscc.py** — spreadsheet -> `labels_all.csv` (simplified rule L1,
   5-year cutoff by default).
 - **convert_ct_hnscc.py** — DICOM CT -> `ct/`; picks the CT the RTSTRUCT
-  references; uneven-slice scans go to `ct_uneven/` instead.
-- **convert_rtstruct_hnscc.py** — TO WRITE: RTSTRUCT primary GTV -> `masks/`.
+  references; sets geometry from the DICOM headers (SimpleITK's is wrong on many
+  HNSCC scans); uneven-slice scans go to `ct_uneven/` instead.
+- **convert_rtstruct_hnscc.py** — RTSTRUCT primary GTV -> `masks/`, filled directly
+  on the CT grid; writes `masks_report.csv`.
+- **diagnose_ct_geometry.py** — prints CT geometry for patients that fail conversion.
 
 ## NSCLC cohort
 - Downloaded + converted **40** R01 patients (with masks). Only R01 patients have
@@ -88,8 +91,8 @@ Censoring in NSCLC labels (148 "alive" not follow-up-checked), cutoff choice
 (2yr/5yr), GPU needed for full-res + full cohort.
 
 ## Next steps
-- HNSCC: check rt-utils installs, then write the mask converter
-  (`convert_rtstruct_hnscc.py`) with the decided GTV rules.
+- HNSCC: run the full pipeline (one-block command in HNSCC_TODO.md). Checkpoint:
+  no errors. Then masks = all visible cancer (backlog H5).
 - After that: run the existing pipeline on HNSCC.
 - Full ordered list in HNSCC_TODO.md and ISSUES_BACKLOG.md.
 
@@ -97,4 +100,4 @@ Censoring in NSCLC labels (148 "alive" not follow-up-checked), cutoff choice
 Mac project folder: `~/Python/ai_lab/LAMMF_IN_PROGRESS` (venv: `.venv`).
 Pipeline: make_labels.py, make_cohort.py, convert_dicom.py, extract_features_mirp.py,
 build_real_csvs.py. HNSCC: inventory_data.py, make_labels_hnscc.py,
-convert_ct_hnscc.py. Model: Model_.py, data_utils.py, trainer.py, late_fusion_GNB.py.
+convert_ct_hnscc.py, convert_rtstruct_hnscc.py, diagnose_ct_geometry.py. Model: Model_.py, data_utils.py, trainer.py, late_fusion_GNB.py.

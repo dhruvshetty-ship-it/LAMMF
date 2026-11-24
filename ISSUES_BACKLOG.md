@@ -58,8 +58,9 @@ improvements. ★ = highest value. Tackle data first (per plan).
       whether "other cancer" should count. Alive patients followed < cutoff are removed.
       Cutoff is **5 years** by default. At 2 years only 4 of 56 labeled patients were
       deaths (7%), too few to split or evaluate.
-- [ ] ★ **H1 — Masks: converter written (`convert_rtstruct_hnscc.py`), not yet run
-      on real data.** Primary GTV only.
+- [x] ★ **H1 — Masks: DONE (Nov 23).** `convert_rtstruct_hnscc.py`: 48 converted,
+      10 skipped, 0 errors (fills contours directly on the CT grid). See H5 for the
+      planned change to include all visible cancer. Primary GTV only.
       Names vary (`gtv`, `gtv primary`, `gtv bot`, `gtv tonsil`...); plain `gtv`
       (34 patients) treated as primary unless evidence says it includes nodes
       (N stage, separate node structure, mask in several pieces). Exclude
@@ -68,10 +69,28 @@ improvements. ★ = highest value. Tackle data first (per plan).
       helpers and CTV/PTV margins (some plans reach 70–72 Gy, so a GTV may simply
       not have been drawn). Later rescue option: highest-dose CTV, but inconsistent. Next: check rt-utils installs, then write
       `convert_rtstruct_hnscc.py`.
+- [ ] ★ **H5 — FUTURE CHANGE: masks should include ALL visible cancer, not just the
+      primary GTV.** Current masks are inconsistent: patients with separate
+      `gtv primary` + `gtv nodes` get primary only, while a plain `gtv` (29 of 48
+      masks) often already includes the lymph nodes. Node involvement is strongly
+      prognostic, so dropping it throws away signal. Plan: add `--include_nodes`
+      (default on) to `convert_rtstruct_hnscc.py` = union of all GTV structures
+      (still excluding CTV/PTV, post-chemo over pre-chemo); keep primary-only as an
+      option and compare both. Longer term: keep primary and each node as SEPARATE
+      regions = separate GNN graph nodes (the multi-node graph, D5/M4). Watch: the
+      CNN's small crop is centered on the mask, which may fall between primary and
+      nodes (M5); MIRP shape features are less meaningful over several lumps.
+      Mention to advisor. First training run (Nov 23) used the 48 primary-GTV masks.
 - [ ] **H2 — Only 65 patient folders found (~60 usable), not ~130.** Ask advisor whether
       more data exists. Spreadsheet covers 215 patients.
 - [ ] **H3 — Docs say lung (NSCLC); HNSCC is head-and-neck.** Update README etc. once
       HNSCC becomes the main dataset.
+- [x] **H6 — SimpleITK mislabels the slice direction on many HNSCC CTs** (found
+      Nov 23). The scans are regular, but SimpleITK's z-direction points down while
+      the slices go up, flipping every position. This caused the "flipped CT" and
+      "geometry not trusted" errors. Fixed: `convert_ct_hnscc.py` sorts slices by
+      position and sets the geometry itself from the DICOM headers, then checks
+      every slice. `diagnose_ct_geometry.py` prints the geometry if it ever recurs.
 - [x] **H4 — Some CTs have uneven slice spacing.** DONE (for now): full run found 3 of
       61 uneven (typical 2.5 mm; worst gaps 9.8 mm, 1100 mm, and a slightly-too-small
       gap). SimpleITK averages the gaps, so those volumes are distorted. All 3 were
@@ -92,7 +111,8 @@ improvements. ★ = highest value. Tackle data first (per plan).
 1. ~~D1 + D2 (normalize + stratify)~~ — DONE.
 2. ~~T3 (seeds)~~ — DONE (np + torch seeded in trainer).
 3. ~~T1 (weighted loss)~~ — DONE.
-4. HNSCC data adapters (labels, CT, masks — H1/H4/L1) — current focus. **← NEXT**
+4. ~~HNSCC data adapters (labels, CT, masks)~~ — DONE Nov 23.
+   **← NEXT: run the full pipeline on HNSCC** (block in HNSCC_TODO.md), then H5.
 5. M1 (preprocess out of forward) — makes CNN iteration fast + enables aug.
 6. M2/M3/M6 (regularization, norm, augmentation) — attack overfitting.
 7. D5/M4 (GNN-is-an-MLP) — design decision.

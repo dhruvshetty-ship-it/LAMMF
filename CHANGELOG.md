@@ -323,9 +323,26 @@ unchanged.
   volumes are distorted. All 3 were survivors, so uneven scans are now saved to
   `ct_uneven/` and left out → **58 usable CTs** (backlog H4).
 - **Labels result:** 55 labeled at the 5-year cutoff, 45 survived / 10 died.
-- **Mask rules decided, converter not written yet** (backlog H1): primary GTV
-  only; post-chemo GTV where both exist; drop the 8 patients with no GTV
-  (likely surgically removed tumors).
+- **`convert_rtstruct_hnscc.py`** (Nov 23) — RTSTRUCT → `masks/`. Picks the primary
+  GTV by name (nodes and CTV/PTV excluded, post-chemo over pre-chemo, empty
+  placeholder structures ignored) and fills the contours **directly on the saved
+  CT's grid**: every contour point is a position in mm, the CT's geometry turns it
+  into a voxel, and a pixel counts if its center is inside the outline. Writes
+  `masks_report.csv` with the structure chosen, volume, number of separate
+  pieces, mean CT value inside the mask, N stage and flags. The first version used
+  rt-utils, which failed on about half the patients; this one needs no extra
+  libraries. Result: **48 masks, 10 skipped, 0 errors.** The 8 patients with no
+  tumor outline at all (only organs and CTV/PTV margins) are dropped.
+- **SimpleITK geometry bug (found while building masks):** on many HNSCC scans,
+  SimpleITK labels the slice direction as pointing down while the slices go up,
+  so every position along the body comes out mirrored. The scans themselves are
+  fine. `convert_ct_hnscc.py` now sorts slices by their physical position, sets
+  the geometry itself from the DICOM headers, and checks that every saved slice is
+  within 1 mm of where its file says. Found with `diagnose_ct_geometry.py`.
+- **Design question logged (backlog H5):** masks should probably include *all*
+  visible cancer (primary + lymph nodes). Primary-only is inconsistent across
+  patients, because a plain `gtv` often already includes nodes, and node spread is
+  strongly prognostic. Deferred; the first training run uses the 48 primary-GTV masks.
 
 Full checklist in `HNSCC_TODO.md`.
 
@@ -335,11 +352,13 @@ Full checklist in `HNSCC_TODO.md`.
 
 **Status:** NSCLC pipeline runs end-to-end with four make-it-right fixes in:
 features **normalized** (D1), split **stratified** (D2), seeds set (T3), and loss
-**weighted** (T1). HNSCC labels and CTs are done (55 labeled, 58 usable CTs);
-masks are next.
+**weighted** (T1). HNSCC data setup is complete: 55 labeled patients, 58 usable
+CTs, 48 tumor masks.
 
-**Immediate next:** check rt-utils installs, write the RTSTRUCT → mask converter
-using the decided GTV rules, then run the existing pipeline on HNSCC.
+**Immediate next:** run the full pipeline on HNSCC (MIRP features →
+`build_real_csvs.py` → train GNN and CNN → fusion), using the one-block command in
+`HNSCC_TODO.md`. Checkpoint: it runs without errors. Then backlog H5 (masks =
+all visible cancer).
 
 **Then, in rough order:** `M1` move CNN preprocessing out of `forward()` →
 `M2/M3/M6` regularization + normalization + augmentation → `D5/M4` the

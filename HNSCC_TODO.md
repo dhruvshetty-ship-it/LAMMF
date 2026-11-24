@@ -1,148 +1,153 @@
 # HNSCC dataset — to-do log
 
-*Started Oct 9, 2026; last updated Nov 13, 2026 (end of session). Data lives only on the advisor's
-Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
-(`~/Python/ai_lab/LAMMF_IN_PROGRESS`) → GitHub → Windows.*
+*Started Oct 9, 2026; last updated Nov 23, 2026 (end of session). Data lives only
+on the advisor's Windows PC at `V:\QIXR\TCIA_H&N\HNSCC`. Code goes Mac
+(`~/Python/ai_lab/LAMMF_IN_PROGRESS`) → GitHub → Windows (`V:\Dhruv_Shetty\LAMMF`).*
 
-## Where things stand
+## Where things stand (Nov 23) — DATA SETUP IS DONE
 
-- **Inventory done** (`inventory_data.py`): 65 patient folders, not the expected
-  ~130. 61 have an RT Simulation study, 60 have an RTSTRUCT, and every RTSTRUCT
-  references a CT in the same study. 2 patients have two CT series. The clinical
-  sheet (`Table 1_update`) covers 215 patients, and all 65 imaged patients match
-  it by `TCIA code`.
-- **CT conversion done** (`convert_ct_hnscc.py`): 61 CTs, 4 skipped (PET only).
-  3 had **uneven slice spacing**; all 3 were survivors, so they're dropped into
-  `ct_uneven/`. Re-run done on Windows with the new script, so `ct/` should hold
-  **58 usable CTs** (confirm: `(Get-ChildItem ct).Count` → 58,
-  `(Get-ChildItem ct_uneven).Count` → 3).
-- **Labels done** (`make_labels_hnscc.py`, 5-year cutoff, simplified rule L1):
-  **55 labeled: 45 survived / 10 died.** (2-year cutoff had given only 4 deaths.)
-- **Masks: next.** GTV rules decided (defaults below), so nothing blocks it.
+All three inputs the pipeline needs exist on the Windows PC:
 
-## Decisions made for the masks (backlog H1)
+| Input | Script | Result |
+|---|---|---|
+| Labels `labels_all.csv` | `make_labels_hnscc.py` | 55 labeled at a 5-year cutoff: 45 survived / 10 died |
+| CTs `ct\` | `convert_ct_hnscc.py` | 58 usable; 2 uneven → `ct_uneven\`; 1 error (formerly uneven, dropped); 4 PET-only skipped |
+| Masks `masks\` | `convert_rtstruct_hnscc.py` | 48 converted, 10 skipped (no tumor outline), 0 errors |
 
-- **Primary GTV only**, no lymph-node GTVs.
-- **Pre- vs post-chemo: use post-chemo.** The CT is the radiation-planning scan,
-  taken after induction chemo, so the post-chemo outline matches what's on it.
-- **The 8 patients with no GTV: dropped (checked Nov 23).** Their structures are
-  only organs, planning helpers and CTV/PTV margin volumes; none outlines the
-  tumor itself. Several plans reach 70–72 Gy, so for some the tumor was likely
-  still in place and a GTV just wasn't drawn. Possible later rescue: use the
-  highest-dose CTV, but it's the tumor plus a margin, so it would be inconsistent
-  with the other masks.
-- **Plain `gtv` (34 patients)**: treat as primary unless evidence says it includes
-  nodes (N stage > 0 with no separate node structure, and a mask in several pieces).
-- Advisor: tell them these defaults as a heads-up; don't wait on an answer.
+All masks average soft-tissue CT values (−25 to 93 HU), so no sign of misalignment.
+The mask run is also an independent check that the CTs are now correct.
+
+**Today's checkpoint was "run training without errors." Not reached yet:** the
+full-pipeline run below was ready but not started (out of time).
 
 ---
 
-## Done so far
-- [x] Inventory (65 folders, ~60 usable)
-- [x] Labels at 5-year cutoff: 55 labeled, 45 survived / 10 died
-- [x] CTs converted: 58 usable in `ct\`, 3 uneven moved to `ct_uneven\`, 4 PET-only skipped
-- [x] Uneven scans decided (backlog H4): dropped, all 3 were survivors
-- [x] GTV rules decided (see "Decisions made for the masks" above)
+## NEXT SESSION: run the full pipeline
 
-## Next up
+On Windows, in `V:\Dhruv_Shetty\LAMMF`, venv active (`.\venv\Scripts\Activate.ps1`),
+after `git pull`. Paste this whole block. It stops at the first failing step and
+saves each step's output in `logs\`.
 
-### 1. Quick checks at the start of next session
-- [ ] Windows: confirm `(Get-ChildItem ct).Count` = 58 and `ct_uneven` = 3.
-- [x] Windows: looked at the 8 no-GTV patients' `roi_names` → no tumor outline, dropped.
-- [ ] Mac (only needed to run code there): the project folder moved to
-      `~/Python/ai_lab/LAMMF_IN_PROGRESS`, so rebuild the venv (`conda deactivate`
-      first): `rm -rf .venv` → `python -m venv .venv` → `source .venv/bin/activate` →
-      `python -m pip install --upgrade pip` → `python -m pip install torch` →
-      `python -m pip install -r requirements.txt`
+```
+& {
+    New-Item -ItemType Directory -Force logs | Out-Null
 
-### 2. Message your advisor
+    Write-Host "`n===== 1/5 radiomics features (slow) =====" -ForegroundColor Cyan
+    python extract_features_mirp.py | Tee-Object logs\run_1_features.txt
+    if ($LASTEXITCODE -ne 0) { Write-Host "STOPPED at step 1" -ForegroundColor Red; return }
+
+    Write-Host "`n===== 2/5 build CSVs + split =====" -ForegroundColor Cyan
+    python build_real_csvs.py labels_all.csv | Tee-Object logs\run_2_build.txt
+    if ($LASTEXITCODE -ne 0) { Write-Host "STOPPED at step 2" -ForegroundColor Red; return }
+
+    Remove-Item -Recurse -Force dataset -ErrorAction SilentlyContinue
+
+    Write-Host "`n===== 3/5 train GNN =====" -ForegroundColor Cyan
+    python trainer.py gnn | Tee-Object logs\run_3_gnn.txt
+    if ($LASTEXITCODE -ne 0) { Write-Host "STOPPED at step 3" -ForegroundColor Red; return }
+
+    Write-Host "`n===== 4/5 train CNN =====" -ForegroundColor Cyan
+    python trainer.py cnn | Tee-Object logs\run_4_cnn.txt
+    if ($LASTEXITCODE -ne 0) { Write-Host "STOPPED at step 4" -ForegroundColor Red; return }
+
+    Write-Host "`n===== 5/5 fusion =====" -ForegroundColor Cyan
+    python late_fusion_GNB.py | Tee-Object logs\run_5_fusion.txt
+    if ($LASTEXITCODE -ne 0) { Write-Host "STOPPED at step 5" -ForegroundColor Red; return }
+
+    Write-Host "`nALL 5 STEPS FINISHED WITHOUT ERRORS" -ForegroundColor Green
+}
+```
+
+Then show the results (safe to paste):
+```
+Get-Content logs\run_1_features.txt -Tail 2; Get-Content logs\run_2_build.txt; Get-Content logs\run_5_fusion.txt
+```
+
+What to check:
+- [ ] Step 1 says **177 features** (if not: update `Model_GNN(input_dim=...)` in
+      `trainer.py` AND `late_fusion_GNB.py`). Slow: tens of minutes to ~1 hour.
+- [ ] Step 2: **every split (train / validation / test) has at least 1 died.**
+      If it errors, it's likely too few deaths for the stratified split.
+- [ ] Steps 3–5 finish → **checkpoint met.** Don't judge the AUC numbers: with
+      ~1–2 deaths in the test set they're noisy. This run proves the pipeline works.
+
+---
+
+## Open questions / advisor
+
 - [ ] Is 65 folders the full dataset? The spreadsheet has 215 patients; the other
       ~150 patients' scans would roughly triple the deaths (only 10 now).
-- [ ] Heads-up on the mask defaults: primary GTV only, post-chemo GTV, drop the
-      8 with no GTV.
+- [ ] **Masks: include all visible cancer (primary + lymph nodes)?** (backlog H5,
+      leaning yes). Explain the current inconsistency below.
 - [ ] OK to use the simplified label rule for now (cancer deaths only, other deaths
       removed, 5-year cutoff)? Should "Other Cancer" deaths (2 patients) count?
-- [ ] Mention the 3 uneven-slice scans that were dropped.
+- [ ] Mention the 3 uneven-slice scans dropped, and the 8 patients with no GTV.
+
+## Future changes (logged, not done)
+
+- [ ] **H5 — masks = all visible cancer.** Today's masks are primary-GTV only, which
+      is inconsistent: patients with separate `gtv primary` + `gtv nodes` get the
+      primary only, but a plain `gtv` (29 of 48) often already includes nodes (16
+      masks come out in several similar-sized pieces). Node spread is strongly
+      prognostic. Plan: `--include_nodes` option (default on) that merges all GTV
+      structures; keep primary-only as an option and compare. Longer term: primary
+      and each node as separate regions → separate GNN graph nodes (D5/M4).
+- [ ] Patient flagged "ONLY PRE-CHEMO" with 5 tiny pieces (1.6 cc, −15 HU) looks
+      wrong; consider dropping it.
+- [ ] Stop flagging plain-`gtv` multi-piece masks when the patient also has a
+      separate node structure (then the pieces aren't nodes).
+- [ ] Visual check: a script that saves a picture of each CT with its mask outline,
+      to confirm masks sit on the tumor and to sort multi-piece masks.
+- [ ] Mac venv: the project folder moved, so rebuild `.venv` before running code on
+      the Mac (`conda deactivate` → `rm -rf .venv` → `python -m venv .venv` →
+      `source .venv/bin/activate` → `python -m pip install --upgrade pip` →
+      `python -m pip install torch` → `python -m pip install -r requirements.txt`).
+- [ ] Update README / PROGRESS_SUMMARY wording: main dataset is now HNSCC (H3).
 
 ---
 
-## Before training can run
+## How we got here (decisions and bugs, for the record)
 
-### A. Masks — the next piece of work
-- [x] `rt-utils` installed on Windows (Nov 23). It pulled in OpenCV, which upgraded
-      numpy to 2.x; fixed by holding OpenCV below 4.12 with `numpy<2`. (Later
-      dropped: the mask script no longer uses rt-utils or OpenCV.)
-- [x] `convert_rtstruct_hnscc.py` written and tested on fake data (Nov 23).
-- [x] First full run (rt-utils version): 23 converted, 9 skipped, 26 errors.
-      23 = "CT slice has no RTSTRUCT image slice" (re-matching rt-utils' slices
-      to the CT failed), 3 = rt-utils crash on outlines without slice links.
-- [x] Rewritten to fill contours directly on the saved CT's grid (pixel counts if
-      its center is inside the outline). No rt-utils/OpenCV. Fake tests exact.
-      Added `--retry_errors`.
-- [x] Second full run: 26 converted, 8 skipped, 24 errors. 22 = "contour lands at
-      slice position -N": the saved CT was **flipped top-to-bottom** (SimpleITK's
-      file order ran top-down for those scans while the volume was labeled
-      bottom-up). 2 = empty placeholder GTV structures.
-- [x] Fixed: `convert_ct_hnscc.py` now sorts slices by physical position itself and
-      refuses to save a volume whose first/last slice isn't where its file says.
-      Mask script skips empty structures. Fake tests confirm both.
-- [x] Re-run of CTs with position sorting: 29 "geometry not trusted". Diagnostic
-      (`diagnose_ct_geometry.py`) showed the scans are perfectly regular (no tilt,
-      2.5 mm gaps, files in order) but **SimpleITK labels the slice direction as
-      pointing down** on these scans. That was the real cause of the earlier flips too.
-- [x] Fixed: `convert_ct_hnscc.py` now reads pixels with SimpleITK but sets the
-      geometry itself from the DICOM headers, and checks every slice. Tests with a
-      simulated SimpleITK mislabel reproduce the PC's numbers exactly (0 / 5 mm / 2x
-      scan length) and the new version is exact.
-- [ ] **Re-run CTs, then masks, both with `--overwrite`**, then check the summary and
-      the flagged patients in `masks_report.csv`.
-- [ ] Checklist the script covers (kept for reference): If not, use `platipy` or
-      fill the contours ourselves with `scikit-image`. Add the winner to `requirements.txt`.
-- [ ] Write `convert_rtstruct_hnscc.py`:
-  - [ ] Only for patients with a CT in `ct\` (the 58); build each mask on that CT's grid.
-  - [ ] Choose the primary GTV per patient by name. Clear primaries: `gtv primary`,
-        `gtv bot`, `gtv tonsil`. Exclude node structures and `ptv70_nogtv`.
-        Where pre- and post-chemo GTVs both exist, take post-chemo.
-  - [ ] For plain `gtv` (34 patients), decide if it's primary-only. Evidence: N0
-        stage in the spreadsheet, a separate node structure existing, or the mask
-        being one piece rather than several.
-  - [ ] Fill the contour and fix the axis order (rt-utils gives rows × cols × slices,
-        SimpleITK wants slices × rows × cols).
-  - [ ] Save `masks\<id>.nii.gz` with the CT's spacing, origin and direction.
-  - [ ] Write a review table: patient, structure chosen, why, number of pieces, size.
-  - [ ] Flag empty masks. MIRP fails on them (backlog D4).
-- [ ] Look at 3–5 masks over their CTs in a viewer (e.g. 3D Slicer) to confirm
-      they line up.
+**Data**
+- Inventory: 65 patient folders (~60 usable); clinical sheet `Table 1_update`
+  (215 patients) matches all 65 by `TCIA code`.
+- Labels: 2-year cutoff gave only 4 deaths → switched to **5 years** (10 deaths).
+  Simplified rule (L1): alive + cancer-related deaths kept, other deaths removed,
+  alive-but-followed-<5-years removed.
+- Masks: **primary GTV only** for now; post-chemo over pre-chemo; nodes and
+  CTV/PTV excluded; empty placeholder structures ignored. 8 patients have no tumor
+  outline at all (only organs and CTV/PTV margins) → dropped.
 
-### B. Cohort check
-- [ ] Count patients with all three: label + CT + mask.
-- [ ] Count deaths in that cohort. With ~60 patients or fewer, a 15% test split is
-      ~9 patients, so check it will contain at least a couple of deaths.
-
-### C. Run the existing pipeline on HNSCC
-- [ ] `python extract_features_mirp.py` → confirm it still produces **177** features.
-      If the count changes, update `Model_GNN(input_dim=...)` in `trainer.py` **and**
-      `late_fusion_GNB.py`.
-- [ ] `python build_real_csvs.py labels_all.csv` → note the printed split sizes.
-- [ ] Delete `dataset\` so the loader rebuilds its cache from the new CSVs.
-- [ ] Smoke test first: run the pipeline on a handful of patients before all of them.
-- [ ] `python trainer.py gnn`, `python trainer.py cnn`, `python late_fusion_GNB.py`.
-      The PC is CPU-only, so the CNN keeps the small (16,32,32) crop for now.
-
-### D. Docs
-- [ ] Update README / PROGRESS_SUMMARY: the main dataset is now head-and-neck
-      (HNSCC), not lung (backlog H3).
-- [ ] Extend the HNSCC section of CHANGELOG as the adapters get finished.
-
----
+**Bugs found and fixed (Nov 23)**
+1. *Uneven slice spacing* (3 scans; one had a 1.1 m gap = two scans in one series):
+   SimpleITK averages the gaps, distorting the volume → saved to `ct_uneven\`,
+   excluded.
+2. *rt-utils masks* (first mask version): 23 failed re-matching its slices to the
+   CT, 3 crashed on outlines without slice links → rewrote the mask script to fill
+   contours directly on the CT grid (a pixel counts if its center is inside the
+   outline). No rt-utils/OpenCV needed.
+3. *Flipped CTs*: "contour lands at slice position −N". Root cause found with
+   `diagnose_ct_geometry.py`: the scans are perfectly regular, but **SimpleITK
+   labels the slice direction as pointing down** on many HNSCC scans → the CT
+   script now sorts slices by position, sets the geometry itself from the DICOM
+   headers, and checks every slice is within 1 mm of its file. Tested with a
+   simulated mislabel that reproduces the PC's numbers exactly.
+4. *Stale files*: errored patients used to keep an old output file → both scripts
+   now delete it.
+5. *numpy 2 via OpenCV* (when rt-utils was installed): fixed with `numpy<2` and
+   OpenCV < 4.12; now moot since nothing uses them.
 
 ## Things to remember
 
 - **Pass real paths, not `.lnk` shortcuts.** Use the shortcut's Target, or
-  right-click a file → "Copy as path".
+  right-click a file → "Copy as path". Clinical file:
+  `V:\QIXR\TCIA_H&N\HNSCC\HNSCC-ClinData_date_offset.xlsx`.
 - **Activate the venv** before running anything, on either machine.
+- **If `git pull` refuses** because of local changes: `git stash`, then `git pull`.
 - **Per-patient CSVs** (`inventory_details.csv`, `labels_detail.csv`,
-  `ct_conversion_report.csv`) contain real IDs. They stay on the PC, and
-  `.gitignore` already keeps CSVs out of git.
+  `ct_conversion_report.csv`, `masks_report.csv`) contain real IDs. They stay on
+  the PC; `.gitignore` keeps CSVs out of git. The printed summaries are ID-free.
 - **Outcome columns never go in as model inputs**: date of death, cause of death,
   recurrence, follow-up. Feeding them in would let the model cheat.
+- Useful flags: `--limit N` (test on a few), `--overwrite` (redo), and for masks
+  `--retry_errors` (redo only failures), `--clinical` (adds N stage to the report).
